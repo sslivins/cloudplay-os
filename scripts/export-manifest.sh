@@ -1,7 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 on_chroot <<'CHROOT'
+# pi-gen suppresses -u during assembly; enable it before checking the new theme.
+sed -i 's/^update_initramfs=.*/update_initramfs=yes/' /etc/initramfs-tools/update-initramfs.conf
+grep -q '^update_initramfs=yes$' /etc/initramfs-tools/update-initramfs.conf
 update-initramfs -u -k all
+install -d -m 700 -o cloudplay -g cloudplay /run/cloudplay-config-check
+runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
+    WLR_BACKENDS=headless WLR_RENDERER=pixman \
+    timeout --kill-after=5 20 dbus-run-session -- labwc -C /etc/cloudplay/labwc -S '/bin/sleep 1'
+rm -rf /run/cloudplay-config-check
 python3 /opt/cloudplay-build-inputs/verify-kiosk.py
 python3 /opt/cloudplay-build-inputs/package-manifest.py
 CHROOT

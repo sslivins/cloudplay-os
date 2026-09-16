@@ -286,8 +286,11 @@ class RecipeSafetyTest(unittest.TestCase):
                          '"console=tty3"', "disable_splash=1", "/etc/initramfs-tools/modules"):
             self.assertIn(expected, stage)
         export = (ROOT / "scripts/export-manifest.sh").read_text()
+        self.assertLess(export.index("update_initramfs=yes"), export.index("update-initramfs -u"))
         self.assertLess(export.index("update-initramfs"), export.index("verify-kiosk.py"))
         self.assertLess(export.index("verify-kiosk.py"), export.index("package-manifest.py"))
+        self.assertIn("runuser -u cloudplay", export)
+        self.assertIn("WLR_BACKENDS=headless", export)
 
     def test_network_provisioning_does_not_create_owner_password(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"
