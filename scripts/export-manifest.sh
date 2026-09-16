@@ -5,6 +5,13 @@ on_chroot <<'CHROOT'
 sed -i 's/^update_initramfs=.*/update_initramfs=yes/' /etc/initramfs-tools/update-initramfs.conf
 grep -q '^update_initramfs=yes$' /etc/initramfs-tools/update-initramfs.conf
 update-initramfs -u -k all
+CHROOT
+# pi-gen bind-mounts /dev without its /dev/shm submount. wlroots needs POSIX shm.
+if ! mountpoint -q "${ROOTFS_DIR}/dev/shm"; then
+    mount --bind /dev/shm "${ROOTFS_DIR}/dev/shm"
+fi
+on_chroot <<'CHROOT'
+runuser -u cloudplay -- test -w /dev/shm
 install -d -m 700 -o cloudplay -g cloudplay /run/cloudplay-config-check
 runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
     WLR_BACKENDS=headless WLR_RENDERER=pixman \

@@ -12,5 +12,5 @@
       <mousebind button="Right" action="Press"><action name="None"/></mousebind>
     </context>
   </mouse>
-  <windowSwitcher show="no"/>
+  <windowSwitcher><osd show="no"/></windowSwitcher>
 </labwc_config>

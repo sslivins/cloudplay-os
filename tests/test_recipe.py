@@ -291,6 +291,7 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertLess(export.index("verify-kiosk.py"), export.index("package-manifest.py"))
         self.assertIn("runuser -u cloudplay", export)
         self.assertIn("WLR_BACKENDS=headless", export)
+        self.assertLess(export.index("mount --bind /dev/shm"), export.index("runuser -u cloudplay"))
 
     def test_network_provisioning_does_not_create_owner_password(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"
