@@ -16,8 +16,12 @@ NVIDIA affiliation/support is not implied.
 
 **Known browser blocker:** v0.4.0 has an unresolved Wayland keyboard-state
 startup crash (`xkb_state_update_mask`) seen in a separate Sway diagnostic
-configuration. A temporary diagnostic keyboard-device workaround is not
-included here. The stock labwc/physical-keyboard path remains untested, and a
+configuration. A disposable `about:blank` reproduction, without GFN or the
+extension, observed `wl_keyboard.enter` followed by modifiers before any
+keymap arrived. A conditional GDB breakpoint confirmed a null state pointer
+passed to `xkb_state_update_mask`; this is not merely a keyboard-absence
+hypothesis. A corrected browser build is pending and is **not included** in
+this image. The stock labwc/physical-keyboard path remains untested, and a
 successful image build does not establish that startup or input works.
 
 ## First image build — 2026-09-16
