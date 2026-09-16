@@ -38,6 +38,33 @@ output validation**, nor boot/onboarding/input acceptance of the Cloudplay
 image. The original v0.4.0 image below remains a historical artifact and does
 not contain the guard.
 
+## Refreshed image build — 2026-09-16 (v0.4.1)
+
+[ARM64 workflow run 35151651032](https://github.com/sslivins/cloudplay-os/actions/runs/35151651032)
+**succeeded**, building source commit
+`bd238607643c039838bc5ccec856aaeabbb264f8`. Its unsigned artifact is
+`cloudplay-os-unsigned-preview-bd238607643c039838bc5ccec856aaeabbb264f8`
+(CI retention expires **2026-09-23**). Download this refreshed artifact rather
+than the earlier v0.4.0 build. Its image is 1,131,547,308 compressed bytes,
+4,600 MiB unpacked:
+
+```text
+82a1f911a532449b747d5ef2767f6b5b642e93d3a4108d5e4c55ac7fddf2ce76  image_2026-09-16-cloudplay-os-preview.img.xz
+```
+
+The downloaded checksum and xz integrity passed. Read-only image inspection
+verified all four v0.4.1 package versions and holds, embedded/external
+provenance agreement, every extension file hash, and the installed browser's
+BuildID above. The image's executable is byte-identical to the independently
+downloaded `.deb` executable. The reviewed launcher, root-owned 4755 sandbox
+helper, root-only extension permissions, stock labwc wizard autologin, locked
+initial accounts and disabled SSH are preserved. All **26** recipe tests and
+CI checks passed.
+
+**No flashing, image boot or interactive GFN test has been performed.**
+This remains an unsigned, hardware-unvalidated image; the separate packaged
+browser fixture tests do not validate the full appliance or 4K/HDR.
+
 ## First image build — 2026-09-16 (historical v0.4.0)
 
 [ARM64 workflow run 35138972856](https://github.com/sslivins/cloudplay-os/actions/runs/35138972856)
