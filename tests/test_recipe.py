@@ -179,6 +179,45 @@ class ArchiveTest(unittest.TestCase):
             artifacts.verify(path, "0" * 64)
 
 
+class InputStagingTest(unittest.TestCase):
+    def setUp(self):
+        self.work = ROOT / "build" / "tests" / uuid.uuid4().hex
+        self.source = self.work / "cache"
+        self.source.mkdir(parents=True)
+        self.addCleanup(lambda: shutil.rmtree(self.work))
+        self.destination = self.work / "staged"
+        self.lock = json.loads((ROOT / "manifest.json").read_text())
+        self.payload = b"verified test artifact"
+        digest = hashlib.sha256(self.payload).hexdigest()
+        for asset in self.lock["browser"]["assets"]:
+            asset["sha256"] = digest
+            (self.source / asset["filename"]).write_bytes(self.payload)
+        self.lock["extension"].update(commit="a" * 40, sha256=digest)
+        (self.source / "extension.tar.gz").write_bytes(self.payload)
+
+    def test_only_current_manifest_inputs_are_staged(self):
+        (self.source / "chromium_old_arm64.deb").write_bytes(b"old browser")
+        artifacts.stage(self.lock, self.source, self.destination)
+        expected = {asset["filename"] for asset in self.lock["browser"]["assets"]}
+        expected.add("extension.tar.gz")
+        self.assertEqual({path.name for path in self.destination.iterdir()}, expected)
+        self.assertTrue(all(path.read_bytes() == self.payload for path in self.destination.iterdir()))
+        script = (ROOT / "scripts/build-image.sh").read_text()
+        self.assertIn("artifacts.py stage --destination", script)
+        self.assertNotIn("cp -a build/artifacts", script)
+
+    def test_corrupt_input_fails_before_staging(self):
+        (self.source / "extension.tar.gz").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "SHA256"):
+            artifacts.stage(self.lock, self.source, self.destination)
+        self.assertFalse(self.destination.exists())
+
+    def test_existing_destination_is_never_merged(self):
+        self.destination.mkdir()
+        with self.assertRaises(FileExistsError):
+            artifacts.stage(self.lock, self.source, self.destination)
+
+
 class RecipeSafetyTest(unittest.TestCase):
     def test_onboarding_and_ssh_defaults(self):
         config = (ROOT / "config").read_text()

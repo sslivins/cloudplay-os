@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import urllib.request
 from pathlib import Path
 
@@ -76,11 +77,25 @@ def download(url, destination, digest):
         partial.unlink(missing_ok=True)
 
 
+def stage(lock, source, destination):
+    validate(lock)
+    inputs = [(asset["filename"], asset["sha256"]) for asset in lock["browser"]["assets"]]
+    inputs.append(("extension.tar.gz", lock["extension"]["sha256"]))
+    for name, digest in inputs:
+        verify(source / name, digest)
+    destination.mkdir(parents=True, exist_ok=False)
+    for name, _ in inputs:
+        shutil.copyfile(source / name, destination / name)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["validate", "fetch"])
+    parser.add_argument("command", choices=["validate", "fetch", "stage"])
     parser.add_argument("--allow-unset", action="store_true")
+    parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
+    if (args.command == "stage") != (args.destination is not None):
+        parser.error("--destination is required only for stage")
     lock = json.loads((ROOT / "manifest.json").read_text())
     validate(lock, allow_unset=args.allow_unset and args.command == "validate")
     if args.command == "fetch":
@@ -95,6 +110,8 @@ def main():
             f"https://codeload.github.com/{ext['repository']}/tar.gz/{ext['commit']}",
             dest / "extension.tar.gz", ext["sha256"],
         )
+    elif args.command == "stage":
+        stage(lock, ROOT / "build" / "artifacts", args.destination)
     print("Manifest valid" + (" (unfinalized pins permitted)" if args.allow_unset else ""))
 
 

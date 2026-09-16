@@ -19,7 +19,7 @@ cp config build/pi-gen/config
 cp -a stage-cloudplay build/pi-gen/
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
 cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py build/pi-gen/cloudplay-inputs/
-cp -a build/artifacts build/pi-gen/cloudplay-inputs/
+python3 scripts/artifacts.py stage --destination build/pi-gen/cloudplay-inputs/artifacts
 cp scripts/export-manifest.sh build/pi-gen/export-image/04-cloudplay-manifest/00-run.sh
 git -c safe.directory="$PWD" rev-parse HEAD > build/pi-gen/cloudplay-inputs/cloudplay-commit.txt
 git -c safe.directory="$PWD" diff --binary HEAD > build/pi-gen/cloudplay-inputs/cloudplay-working-tree.patch

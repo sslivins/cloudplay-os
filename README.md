@@ -140,6 +140,9 @@ no fallback to a branch/tag/latest. An unavailable commit or digest mismatch
 stops the build. GitHub archive regeneration can require deliberate digest
 review. Small CI also permits the explicit unfinalized sentinel pair for early
 source review; image CI always requires finalized commit and digest pins.
+Before pi-gen starts, only the current manifest's five verified artifacts are
+copied from the download cache into a new staging directory. Cached browser
+packages from older releases are never included in the installation wildcard.
 
 ## Checks and build
 
