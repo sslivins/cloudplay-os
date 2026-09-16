@@ -61,6 +61,58 @@ acceptance reports. Auth/session information is sensitive.
 
 ## Why a stock desktop
 
+### Official release baseline checked 2026-09-16
+
+The latest official Raspberry Pi OS 64-bit desktop image is **2026-09-15**,
+Debian **13/Trixie**, kernel **6.18.50**. Its published `.info` identifies
+pi-gen commit `2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268` (committed
+**2026-09-14 17:11:54 UTC**), also tagged
+`2026-09-15-raspios-trixie-arm64`. This is a released-image reference, not
+an assumption that current upstream HEAD is a release.
+
+Cloudplay already pins `74d08a337bd29da289b9aedbe5b48c79fb2e5a03`
+(**2026-09-16 14:45:05 UTC**), the upstream **arm64** branch HEAD at review.
+It contains that release commit plus five history entries (including two
+merges). The net changes are build-host fixes: `udevadm settle -t 10`,
+Docker binfmt handling, ARM64 dependency naming and documentation. No image
+stage, desktop or owner-onboarding recipe files differ. Upstream's default
+`master` branch is not the ARM64 target.
+
+**Decision: retain the current verified pin and Trixie config.** Replacing it
+with the release tag would roll back useful build fixes rather than update the
+OS. The successful first Cloudplay build already contains the new release's
+kernel, firmware and desktop stack. Comparison against the official image's
+package inventory found:
+
+| Component | Official 2026-09-15 and Cloudplay first image |
+| --- | --- |
+| Pi 5 kernel metapackage | `1:6.18.50-1+rpt1` |
+| raspi-firmware | `1:1.20260907-1` |
+| labwc | `0.20.1-1+rpt1` |
+| wlroots | `0.20.2-1+rpt3` |
+| Mesa | `26.2.2-1~bpo13+0~rpt1` |
+| rpd-wayland-core / wf-panel-pi | `1.29` / `1.31` |
+| piwiz / userconf-pi | `1.8` / `0.19` |
+| cloud-init | `25.2-1~bpo13+1+rpt20` |
+
+Cloudplay's apt build also picked up newer `pcmanfm-pi` 1.7 (official 1.6),
+`pishutdown` 0.42 (0.41), `wfplug-imenu` 0.10 (0.9), the three network-panel
+packages at 1.18 (1.17), and `mkvtoolnix` `92.0-1+deb13u1` (`92.0-1`).
+This is not byte-identical to the official desktop image: Cloudplay deliberately
+uses stages 0–3 plus its appliance stage rather than official stage4, retains a
+separately pinned custom browser, and resolves unsnapshotted apt repositories.
+No OS-only rebuild is necessary to obtain the September release baseline;
+the next coordinated browser revision still needs a fresh build and acceptance.
+
+Sources:
+- [Official downloads and release date](https://www.raspberrypi.com/software/operating-systems/)
+- [September release notes](https://downloads.raspberrypi.com/raspios_arm64/release_notes.txt)
+- [Official September image provenance and package inventory](https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-09-15/2026-09-15-raspios-trixie-arm64.info)
+- [Released ARM64 recipe tag](https://github.com/RPi-Distro/pi-gen/tree/2026-09-15-raspios-trixie-arm64)
+- [Exact released-to-pinned recipe comparison](https://github.com/RPi-Distro/pi-gen/compare/2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268...74d08a337bd29da289b9aedbe5b48c79fb2e5a03)
+
+### Preserving desktop and onboarding
+
 At pinned pi-gen commit `74d08a337bd29da289b9aedbe5b48c79fb2e5a03`,
 stage3 installs `rpd-wayland-core`, `rpd-x-core`, `rpd-preferences` and
 `rpd-theme`; stage4 adds applications/developer/graphics/utilities/extras.

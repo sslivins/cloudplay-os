@@ -47,6 +47,11 @@ are met, but Vulkan rendering, SAND import, real service entitlement and
 physical HDR output are still unvalidated. **Nothing has been flashed or
 boot-tested.** These static checks do not pass the physical acceptance matrix.
 
+This image already includes the **2026-09-15 Raspberry Pi OS release baseline**.
+Its exact pi-gen pin contains the released ARM64 recipe plus build-host fixes;
+kernel, firmware, labwc, wlroots and Mesa match the official image. See the
+[release comparison and decision to retain the current pin](docs/maintenance.md#official-release-baseline-checked-2026-09-16).
+
 ## Display target
 
 The intended target is **3840×2160 at 60 fps with genuine HDR display output**.
