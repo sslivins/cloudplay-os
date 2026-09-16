@@ -1,0 +1,27 @@
+CLOUDPLAY OS IS AN UNVALIDATED DEVELOPER PREVIEW, NOT A SECURE PRODUCT RELEASE.
+
+Chromium, chromium-common, chromium-sandbox and chromium-l10n are intentionally
+held at a coordinated custom HEVC build. Ordinary OS upgrades WILL NOT update
+these browser packages. This browser processes untrusted web content. A hold
+can leave exploitable vulnerabilities unpatched. Do not use this image as your
+general browsing workstation. Maintainers must monitor Chromium security
+advisories and replace all four packages together, update the digest manifest,
+then repeat sandbox, sign-in, extension and streaming acceptance tests.
+There is no automatic browser or extension security update service.
+
+Chromium runs as your local user with its normal sandbox. Never add
+--no-sandbox, --disable-setuid-sandbox or remote-debugging flags. The packaged
+unpacked extension is root-owned and read-only to users; only an administrator
+can replace it. Chromium's --load-extension support must be tested on this build.
+The extension is a capability-gating prototype, not a promise of HEVC or HDR.
+
+The desktop automatically logs in the owner for appliance use. Anyone with
+physical access can access this desktop and persisted GFN/browser sessions.
+Use raspi-config to disable desktop autologin if that is unacceptable.
+Local administrator actions require the owner's password. SSH is off.
+No shared owner password, telemetry/backend, signed OTA, or verified boot is
+provided. Public signed images require a separately reviewed trust anchor.
+
+OS recovery is manual reflash. Reflash erases local settings and browser login.
+Back up deliberately; browser profiles contain credentials/session cookies.
+Checksums detect corruption but do not authenticate an untrusted download.

@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Cloudplay after onboarding
+Exec=cloudplay-start --autostart
+Terminal=false

@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$(id -u)" -ge 1000 ]] || exit 0
+[[ "$(id -un)" != rpi-first-boot-wizard ]] || exit 0
+# Never obscure the stock onboarding wizard or run in its privileged account.
+[[ ! -e /etc/xdg/autostart/piwiz.desktop ]] || exit 0
+[[ -n "${WAYLAND_DISPLAY:-}" ]] || { echo "Log into the labwc Wayland desktop first" >&2; exit 1; }
+umask 077
+state="${XDG_CONFIG_HOME:-$HOME/.config}/cloudplay"
+mkdir -p "$state"
+chmod 700 "$state"
+if [[ "${1:-}" == --autostart ]]; then
+    [[ ! -f "$state/desktop-only" ]] || exit 0
+    sleep 8
+fi
+[[ -f /opt/gfn-pi-compat/manifest.json ]] || { echo "Compatibility extension missing" >&2; exit 1; }
+profile="$state/chromium-profile"
+[[ ! -L "$profile" ]] || { echo "Profile must not be a symlink" >&2; exit 1; }
+mkdir -p "$profile"
+chmod 700 "$profile"
+exec /usr/bin/chromium \
+    --ozone-platform=wayland \
+    --use-angle=gles \
+    --user-data-dir="$profile" \
+    --load-extension=/opt/gfn-pi-compat \
+    --start-fullscreen \
+    https://play.geforcenow.com/
