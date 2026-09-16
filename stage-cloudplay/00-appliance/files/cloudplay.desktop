@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Cloudplay — GeForce NOW Preview
-Comment=Unvalidated streaming prototype; Alt+F4 returns to desktop
-Exec=cloudplay-start
-Icon=applications-games
-Terminal=false
-Categories=Game;

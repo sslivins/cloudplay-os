@@ -17,8 +17,11 @@ git -C build/pi-gen checkout --detach FETCH_HEAD
 [[ "$(git -C build/pi-gen rev-parse HEAD)" == "$commit" ]]
 cp config build/pi-gen/config
 cp -a stage-cloudplay build/pi-gen/
+# Lite otherwise installs userconf-pi again and enables the OS account wizard.
+rm -rf build/pi-gen/export-image/01-user-rename
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
-cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py build/pi-gen/cloudplay-inputs/
+cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py \
+    scripts/supervise.py scripts/verify-kiosk.py build/pi-gen/cloudplay-inputs/
 python3 scripts/artifacts.py stage --destination build/pi-gen/cloudplay-inputs/artifacts
 cp scripts/export-manifest.sh build/pi-gen/export-image/04-cloudplay-manifest/00-run.sh
 git -c safe.directory="$PWD" rev-parse HEAD > build/pi-gen/cloudplay-inputs/cloudplay-commit.txt

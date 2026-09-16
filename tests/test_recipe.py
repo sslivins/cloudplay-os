@@ -6,10 +6,12 @@ import json
 import re
 import shutil
 import tarfile
+import tomllib
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +26,7 @@ def load(name, file):
 artifacts = load("artifacts", "artifacts.py")
 installer = load("installer", "install-extension.py")
 hdr = load("hdr", "hdr-readiness.py")
+supervisor = load("supervisor", "supervise.py")
 
 
 class HdrPrerequisiteTest(unittest.TestCase):
@@ -219,12 +222,20 @@ class InputStagingTest(unittest.TestCase):
 
 
 class RecipeSafetyTest(unittest.TestCase):
-    def test_onboarding_and_ssh_defaults(self):
+    def test_locked_kiosk_and_no_stock_wizard(self):
         config = (ROOT / "config").read_text()
         for expected in ("FIRST_USER_PASS=''", "DISABLE_FIRST_BOOT_USER_RENAME=0",
-                         "ENABLE_SSH=0", "PASSWORDLESS_SUDO=0"):
+                         "ENABLE_SSH=0", "PASSWORDLESS_SUDO=0", "FIRST_USER_NAME='cloudplay'"):
             self.assertIn(expected, config)
-        self.assertIn("stage3 stage-cloudplay", config)
+        self.assertIn("stage2 stage-cloudplay", config)
+        self.assertNotIn("stage3", config)
+        build = (ROOT / "scripts/build-image.sh").read_text()
+        self.assertIn("rm -rf build/pi-gen/export-image/01-user-rename", build)
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        self.assertIn("apt-get purge -y userconf-pi rpi-connect-lite", stage)
+        self.assertIn("usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay", stage)
+        self.assertNotIn("do_boot_behaviour B4", stage)
+        self.assertIn("systemctl mask ssh.service", stage)
 
     def test_launcher_security(self):
         launcher = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-start").read_text()
@@ -233,8 +244,73 @@ class RecipeSafetyTest(unittest.TestCase):
                           "--window-size", "--force-device-scale-factor", "--disable-hdr"):
             self.assertNotIn(forbidden, launcher)
         for expected in ("chmod 700", "--load-extension=/opt/gfn-pi-compat",
-                         "piwiz.desktop", "rpi-first-boot-wizard", "--ozone-platform=wayland"):
+                         "--kiosk", "--no-first-run", "--ozone-platform=wayland", "cloudplay",
+                         "https://play.geforcenow.com/"):
             self.assertIn(expected, launcher)
+        self.assertNotIn("desktop-only", launcher)
+
+    def test_greetd_has_no_interactive_greeter(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        config = tomllib.loads((files / "greetd.toml").read_text())
+        self.assertEqual(config["terminal"]["vt"], 7)
+        for name in ("initial_session", "default_session"):
+            self.assertEqual(config[name]["user"], "cloudplay")
+            self.assertIn("cloudplay-session", config[name]["command"])
+            self.assertNotIn("agreety", config[name]["command"])
+        session = (files / "cloudplay-session").read_text()
+        self.assertIn("XDG_RUNTIME_DIR", session)
+        self.assertIn("dbus-run-session", session)
+        self.assertIn("-C /etc/cloudplay/labwc", session)
+        self.assertIn("-S /usr/local/bin/cloudplay-browser-session", session)
+
+    def test_no_desktop_ui_or_default_shell_shortcuts(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        self.assertFalse(list(files.glob("*.desktop")))
+        self.assertFalse((files / "cloudplay-settings").exists())
+        xml = ElementTree.parse(files / "labwc-rc.xml").getroot()
+        self.assertTrue(xml.findall("./keyboard/keybind"))
+        self.assertTrue(xml.findall("./mouse/context/mousebind"))
+        self.assertFalse(xml.findall(".//default"))
+        self.assertFalse(xml.findall(".//action[@name='Execute']"))
+        packages = (ROOT / "stage-cloudplay/00-appliance/00-packages-nr").read_text().split()
+        self.assertTrue({"greetd", "labwc", "libpam-systemd", "pipewire", "plymouth-themes"} <= set(packages))
+        self.assertFalse({"lightdm", "piwiz", "rpd-wayland-core", "zenity"} & set(packages))
+
+    def test_splash_wiring_and_export_verification(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        theme = (files / "cloudplay.plymouth").read_text()
+        self.assertIn("ModuleName=script", theme)
+        self.assertIn("Cloudplay OS", (files / "cloudplay.script").read_text())
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        for expected in ("plymouth-set-default-theme cloudplay", '"splash"', '"quiet"',
+                         '"console=tty3"', "disable_splash=1", "/etc/initramfs-tools/modules"):
+            self.assertIn(expected, stage)
+        export = (ROOT / "scripts/export-manifest.sh").read_text()
+        self.assertLess(export.index("update-initramfs"), export.index("verify-kiosk.py"))
+        self.assertLess(export.index("verify-kiosk.py"), export.index("package-manifest.py"))
+
+    def test_network_provisioning_does_not_create_owner_password(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        cloud = (files / "cloud-init-kiosk.cfg").read_text()
+        self.assertIn("users: []", cloud)
+        self.assertIn("ssh_pwauth: false", cloud)
+        network = (files / "network-config").read_text()
+        self.assertIn("dhcp4: true", network)
+        self.assertNotIn("password:", network)
+
+    def test_crash_backoff_is_bounded_and_recovers_after_stable_run(self):
+        failures = 0
+        delays = []
+        for _ in range(7):
+            failures, delay = supervisor.next_retry(failures, 1)
+            delays.append(delay)
+        self.assertEqual(delays, [2, 4, 8, 16, 32, 300, 2])
+        self.assertEqual(supervisor.next_retry(5, 120), (0, 2))
+
+    def test_supervisor_refuses_root(self):
+        with patch.object(supervisor.os, "geteuid", return_value=0, create=True):
+            with self.assertRaises(SystemExit):
+                supervisor.main(["/bin/true"])
 
     def test_no_release_or_automatic_image_build(self):
         workflow = (ROOT / ".github/workflows/build-image.yml").read_text()

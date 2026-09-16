@@ -1,0 +1,15 @@
+greetd
+labwc
+libpam-systemd
+dbus-user-session
+pipewire
+pipewire-pulse
+wireplumber
+libspa-0.2-bluetooth
+libgl1-mesa-dri
+mesa-vulkan-drivers
+fonts-dejavu-core
+fonts-liberation
+plymouth
+plymouth-themes
+network-manager

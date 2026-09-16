@@ -1,0 +1,3 @@
+#!/bin/sh
+# The session client is supplied with labwc -S; no desktop autostart is run.
+exit 0

@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$(id -un)" == cloudplay && -n "${WAYLAND_DISPLAY:-}" ]] || exit 1
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+systemctl --user start pipewire.socket pipewire-pulse.socket wireplumber.service
+exec /usr/local/lib/cloudplay/supervise.py /usr/local/bin/cloudplay-start

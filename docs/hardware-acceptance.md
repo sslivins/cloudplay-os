@@ -1,108 +1,109 @@
-# Mandatory physical acceptance — no results claimed yet
+# Kiosk physical acceptance — not yet passed
 
-Record image SHA256, source commit, `/usr/local/share/cloudplay/build-manifest.json`,
-four installed Chromium versions, extension `cloudplay-source.json`, kernel,
-Mesa/labwc versions, Pi 5 RAM/firmware, power/cooling, input devices, cable,
-HDMI port, display model/firmware/EDID and exact GFN account tier/game/region.
-Redact accounts, tokens and public IPs. Mark each item **not run/pass/fail** with
-timestamp and evidence. All items below are currently **not run for this image**.
+The earlier desktop image was booted and rejected: it exposed Raspberry Pi's
+desktop and OS setup rather than the requested appliance. The **new Lite
+kiosk design is not yet physically boot-validated**. Record each item below
+as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
-Separate browser-only evidence exists for
-[v0.4.1](https://github.com/sslivins/chromium-rpi-hevc/releases/tag/v0.4.1):
-the actual packaged browser, BuildID
-`ead10187a8df80ef5b7683ad3e113baef22016cb`, passed five local 1080p HEVC
-fixture/image/motion tests with normal-user sandboxing and V4L2 device evidence,
-including the pre-keymap keyboard guard on every fresh launch. All seven
-keyboard unit tests passed. These results do not pass any Cloudplay first-boot
-row below and are not GFN interactive gameplay, 4K decode or HDR display proof.
-The earlier v0.4.0 live GFN stream evidence is a different browser revision.
+Record image SHA256/source commit, build-manifest/kiosk-verification reports,
+actual kernel/Mesa/labwc versions, board (including CM5 versus Pi5), RAM, boot
+media serial, power/cooling, peripherals, monitor/EDID, cable/port, GFN account
+tier, game and region. Redact credentials, session tokens and public IPs.
 
-## Boot, owner and escape
+## Flash safety and boot UX
 
-- Flash a spare card; verify SHA256. First boot without Imager customization:
-  owner wizard appears unobscured, creates owner-chosen credentials, connects
-  Wi-Fi with chosen regulatory country, completes and reboots into owner GFN.
-- Repeat with supported Imager customization and with Ethernet/offline first
-  boot. Confirm cloud-init and piwiz cooperate rather than losing networking
-  or launching a privileged browser. No wizard-account browser may run.
-- Owner is nonroot; normal sudo needs the selected password; root locked;
-  SSH remains disabled, no preinstalled common credentials or debug listener.
-- F11 and Alt+F4 escape to desktop; panel Wi-Fi/Bluetooth/display/audio controls
-  work. Settings toggles next-login autostart. Local VT recovery works.
-- Unplug network, change display mode, hotplug monitor, reboot after hard
-  shutdown and simulate browser crash. No respawn loop traps the owner.
-- Profile mode 0700, persistent login after reboot, sign-out/profile deletion
-  works. Physical-access exposure of auto-login is explicitly accepted.
+- Operator boots a **different root device**, identifies the intended spare
+  card by serial/capacity, confirms every target partition is unmounted and
+  explicitly approves the destructive write. Never flash running root.
+- Verify checksum and perform readback verification. Preserve the known-good
+  prior media/artifacts. No automatic flashing is included in the build.
+- Cold boot shows **Cloudplay OS** branding, not the stock Pi desktop, rainbow
+  screen, account wizard or normal terminal banner.
+- Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
+  from the selected initramfs, hands off to Chromium and has no long black gap.
+- Without manual OS interaction, Chromium opens fullscreen at
+  `https://play.geforcenow.com/`; NVIDIA sign-in is the only requested login.
+- No LightDM, graphical/text greeter, taskbar, desktop panel, wallpaper shell
+  or Cloudplay settings window appears. Browser login popups still work.
+- Confirm `cloudplay` UID1000 owns the compositor/browser; greetd has opened
+  a real seat0/VT7 PAM/logind session and a D-Bus user session exists.
+- Root/cloudplay passwords are locked, cloudplay has no sudo/adm/disk group,
+  no default SSH listener or ordinary getty is active, no shared credentials.
 
-## Browser, extension and genuine capability
+## Input, network, audio and persistence
 
-- `chrome://version` shows the intended normal-user executable and arguments;
-  `chrome://sandbox` confirms sandbox operation; no `--no-sandbox` or debugger.
-- `chrome://extensions` confirms unpacked MV3 extension loaded from the
-  root-owned `/opt/gfn-pi-compat` and correct reviewed version. Establish whether
-  this Chromium build still honors `--load-extension`; failure blocks preview.
-- Establish real HEVC/Main10 MediaCapabilities/decoder support, and observe the
-  extension's behavior both with HEVC available and deliberately unavailable.
-  Earlier `h265=1` experimentation enabled a real capability check; it did not
-  prove that every client or display supports the resulting stream.
-- GFN, NVIDIA login, optional Google login and redirect/popup/2FA flows work
-  without root, remote debugging, certificate bypasses or spoofed entitlement.
-  An older root diagnostic had a Google rejection of unknown cause; this is
-  not evidence it is fixed, nor justification for bypassing provider controls.
-- Account tier, region, browser/platform support and game genuinely authorize
-  requested 4K60/HDR. A capability override cannot create service entitlement.
+- Ethernet DHCP works with a fresh card. The browser does not wait for a
+  setup wizard. Complete real NVIDIA and optional federated/2FA login flows.
+- Repeat with first-boot `network-config` Wi-Fi provisioning and correct
+  regulatory domain. Test no-network boot, later network recovery and reload.
+  Imager account-renaming/SSH customization is not supported.
+- Test keyboard typing, pointer lock, mouse, wired/Bluetooth controllers,
+  hotplug/disconnect/reconnect and actual gameplay input.
+- Confirm PipeWire/Pulse compatibility socket and WirePlumber run as the
+  appliance user; test HDMI/USB audio, sync and reconnection.
+- Browser profile is mode0700 and NVIDIA login persists across normal reboot.
+  Sign-out works. Offline profile deletion and manual reflash clear login.
+- Check keyboard shortcuts do not launch terminals, a root menu or desktop
+  shell. Kiosk mode is not a security boundary against arbitrary browsing.
+- Close/crash the browser and compositor separately. Their own supervisors
+  relaunch with documented bounded backoff, without touching other processes.
+  After repeated failures, verify the five-minute pause rather than a tight
+  crash loop. Recovery must not require a desktop interface.
+- Test monitor unplug/replug, mode changes and power loss. No claim of
+  flicker-free handoff or reliable recovery until these tests pass.
 
-## Separate test matrix
+## Browser/extension and evidence boundaries
 
-1. **1080p60 SDR baseline**: prior evidence is only a starting hypothesis.
-   Prove negotiated dimensions/rate/codec and active hardware decode here.
-2. **3840×2160 at 60 fps SDR**: actual inbound decoded dimensions and measured
-   frame rate, not merely a 4K desktop or GFN menu option. Record network bitrate,
-   dropped frames, decode latency, CPU/GPU use and temperature over 30+ minutes.
-3. **3840×2160 at 60 fps HDR**: all of the above plus the complete HDR proof
-   below. SDR success does not pass this row. If service or presentation stack
-   cannot supply HDR, record the blocker; do not declare tone-mapped SDR HDR.
+- `chrome://version` shows the exact v0.4.1 packaged executable/arguments.
+  `chrome://sandbox` confirms normal sandboxing; no root/no-sandbox/debug port.
+- Reviewed MV3 extension loads from root-owned `/opt/gfn-pi-compat`; test true
+  HEVC capability with support present and deliberately absent.
+- Confirm real provider login without certificate bypasses or entitlement
+  spoofing. An extension cannot grant a service tier/region capability.
 
-Use local `chrome://webrtc-internals`, `chrome://gpu`, `chrome://media-internals`
-and GFN diagnostics as applicable, without opening a remote-debug port. Capture
-real codec profile/bit depth and hardware decoder evidence (V4L2 path, not
-software decode inferred from a low average CPU). Test audio sync, keyboard,
-mouse pointer lock, wired/Bluetooth controller latency and disconnect/reconnect.
+Separate evidence already exists for packaged browser v0.4.1, BuildID
+`ead10187a8df80ef5b7683ad3e113baef22016cb`: seven keyboard tests and five
+local **1080p30** HEVC fixture/image/motion tests passed as sandboxed UID1000,
+with V4L2 logs/device descriptors and the pre-keymap guard exercised on each
+fresh launch. That ran in a different session, not this kiosk image.
+HDR-coded content there was not proof of HDR display output.
 
-## HDR evidence (all required)
+Earlier v0.4.0 live GFN evidence negotiated H265 profile1 at 1080p/about60fps,
+but did not prove interactive gameplay and is a different browser revision.
 
-- Run `cloudplay-hdr-check` and retain its output. For upstream labwc's HDR10
-  path require labwc >=0.20.0, linked wlroots >=0.20.1, and a working **Vulkan
-  renderer**. Confirm the running session uses the diagnosed binary and renderer.
-  Stock Pi packages may still be on 0.9.x; upstream availability is not proof
-  of installed support. A version-floor pass is not an HDR acceptance pass.
-- Prove the Pi **V4L2 HEVC Main10 SAND/dmabuf import path** works with the actual
-  Chromium/Mesa/Vulkan/compositor combination, not only a different renderer.
-- Source stream is actually HDR: Main10 alone is insufficient. Record signaled
-  transfer function (PQ or HLG as applicable), BT.2020 primaries/colorimetry and
-  HDR metadata where available, plus GFN's actual HDR session indication.
-- Browser imports/presents those decoded frames without stripping metadata or
-  silently tone-mapping to an SDR surface.
-- Kernel/KMS/compositor output selects a valid display-supported 4K60 mode with
-  appropriate bit depth and color space. Capture output/connector HDR metadata,
-  EOTF and link configuration using available on-device DRM/compositor tools.
-- The physical display's information screen indicates the expected HDR mode;
-  use known HDR highlights/black levels and, where possible, calibrated
-  measurement to distinguish real HDR from SDR tone-mapping or display effects.
-- Repeat after hotplug, mode change, resume/reconnect and reboot. Confirm SDR
-  content is not incorrectly tagged as HDR. Document actual panel/link limits.
+## Stream/display matrix
 
-If the stock labwc/Chromium path lacks HDR presentation, report **HDR blocked**
-and identify the missing link. A future compositor/backend change must preserve
-onboarding, networking and local escape. 4K60 and HDR remain release goals, not
-marketing claims until this matrix is passed.
+1. **1080p60 SDR**: prove real GFN negotiated codec/dimensions/rate and active
+   V4L2 hardware decode on this image, plus usable interactive controls/audio.
+2. **3840×2160 at 60fps SDR**: prove actual inbound/decoded dimensions and
+   measured rate, not desktop resolution or a menu option. Record dropped
+   frames, bitrate, latency, CPU/GPU load and temperature over 30+ minutes.
+3. **3840×2160 at 60fps HDR**: all preceding evidence plus all conditions below.
+   Mark blockers rather than treating decoded HDR metadata or SDR tone mapping
+   as HDR output.
 
-## Maintenance/recovery
+HDR acceptance requires:
 
-Close Chromium, perform a reviewed local extension update, confirm root-only
-write permissions and the atomic link replacement, restart and verify behavior,
-then roll back to a retained version. Corrupt/wrong-root/linked archives must
-fail. Verify ordinary apt upgrades preserve all four held Chromium versions,
-then test a coordinated browser replacement separately. Validate manual reflash
-and account/session loss handling. No signed/public release is authorized by
-passing a small unit test suite alone.
+- Genuine service entitlement/region/game and a capable display/link.
+- Installed/running labwc >=0.20.0 with linked wlroots >=0.20.1; preserve
+  `cloudplay-hdr-check` output. Floors alone never pass HDR acceptance.
+- Working wlroots **Vulkan renderer** and the exact Pi V4L2 HEVC Main10
+  SAND/dmabuf import path across Chromium/Mesa/compositor.
+- Source transfer function, BT.2020 colorimetry and HDR metadata/service
+  signaling. Main10 alone does not prove HDR.
+- Browser presentation preserving color/metadata rather than silently
+  stripping it or tone-mapping to SDR.
+- Correct KMS/HDMI mode, bit depth, color space/EOTF and output metadata.
+- Physical display indicating real HDR; distinguish it from display effects
+  and tone-mapped SDR, ideally with calibrated measurements.
+- Repeat after mode changes, hotplug and reboot; SDR content stays correctly
+  tagged. No unsupported HDR flags or claim may substitute for this evidence.
+
+## Maintenance
+
+Confirm all four browser packages stay held during OS upgrades. A coordinated
+browser change requires all four digests/version checks and repeated acceptance.
+An administrator's reviewed extension change must fail for corrupt/unsafe
+archives, preserve root-only writes, switch atomically and allow rollback.
+Close the kiosk before switching. Verify manual recovery and session loss.
+Unsigned CI checksums are not a trusted release signature.

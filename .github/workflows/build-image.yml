@@ -1,4 +1,4 @@
-name: Build unsigned ARM64 preview
+name: Build unsigned ARM64 kiosk preview
 on:
   workflow_dispatch:
 permissions:
@@ -35,7 +35,7 @@ jobs:
       - name: Retain preview image and provenance (not a public release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cloudplay-os-unsigned-preview-${{ github.sha }}
+          name: cloudplay-os-kiosk-preview-${{ github.sha }}
           path: build/pi-gen/deploy/
           if-no-files-found: error
           retention-days: 7

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Executed in the final export rootfs, after stock user setup packages."""
+"""Executed in the final export rootfs after kiosk and splash verification."""
 import hashlib
 import json
 import subprocess
@@ -32,6 +32,7 @@ manifest = {
     "apt_sources": sources,
     "packages_sha256": hashlib.sha256(packages.encode()).hexdigest(),
     "extension_files_sha256": files,
+    "kiosk_configuration": json.loads((output / "kiosk-verification.json").read_text()),
     "hdr_prerequisite_diagnostic": json.loads(subprocess.check_output([
         "/usr/local/bin/cloudplay-hdr-check",
     ], text=True)),

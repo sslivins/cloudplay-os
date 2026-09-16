@@ -1,188 +1,139 @@
-# Maintenance and trust boundaries
+# Kiosk architecture, maintenance and trust
 
-## Browser hold is security debt
+## Lite boot, not the rejected desktop
 
-`chromium`, `chromium-common`, `chromium-sandbox`, and `chromium-l10n` are held
-together to prevent an ordinary apt upgrade replacing the custom HEVC build
-or mixing versions. This is **not** a safe indefinitely frozen browser.
-Monitor upstream security advisories, rebuild in the separate browser project,
-review all four new artifact digests, update this manifest and run acceptance.
-There is no scheduled update mechanism or maximum-age enforcement yet.
+The old desktop preview was physically booted and rejected. The new recipe
+uses only pi-gen stages 0–2 plus Cloudplay, with no stage3 desktop metapackages.
+`FIRST_USER_NAME=cloudplay`, `FIRST_USER_PASS=''` creates the initial account
+without a usable password. The appliance stage explicitly locks root/cloudplay,
+sets the appliance shell and removes sudo/adm/disk membership.
 
-For a coordinated local experiment only, close Chromium, download and verify
-all four reviewed replacements, `sudo apt-mark unhold` those four packages,
-install the four together, check `dpkg-query -W` versions, then reapply
-`sudo apt-mark hold` and retest. Prefer a new reviewed image for distribution;
-in-image build provenance describes the original image, not later local edits.
-Do not drop the sandbox to fix decoder, extension or login problems.
+The pinned build's `DISABLE_FIRST_BOOT_USER_RENAME=1` guard requires a nonempty
+initial password. We do **not** invent a shared password to satisfy it.
+Instead, the build removes only the stock `export-image/01-user-rename` stage,
+which would reinstall `userconf-pi` and run `rename-user -f -s`. The appliance
+stage purges the Lite-recommended `userconf-pi` package and masks its service.
+No piwiz, user rename, whiptail account dialog or LightDM is shipped.
 
-## Extension is independently replaceable, not trusted OTA
+greetd 0.10.3-4 uses the distro PAM `login` stack, including `pam_systemd`,
+and registers its VT/seat with logind before dropping UID/GID. The initial
+session runs as `cloudplay`; the default fallback runs the same kiosk rather
+than `agreety`. There is no password-authentication bypass module. greetd's
+fallback is technically a greeter-class logind session, but executes only
+the unprivileged kiosk, not a greeter UI. Normal operation stays in the initial
+user session while its compositor/browser supervisors handle restarts.
 
-The installed helper accepts a local archive, full reviewed commit, and SHA256:
+`cloudplay-session` requires PAM's owned `XDG_RUNTIME_DIR`, then launches
+`dbus-run-session` and minimal labwc. The compositor's session client imports
+the Wayland environment into D-Bus/systemd and starts the user audio services.
+Neither compositor nor Chromium runs as root. The fixed account has audio,
+video, render and input access but no disk/admin/sudo access.
 
-```sh
-sudo python3 /usr/local/lib/cloudplay/install-extension.py \
-  ./extension.tar.gz '<40-character-reviewed-commit>' '<64-character-sha256>'
-```
+Both initial and fallback commands log through `systemd-cat`. The compositor's
+root-owned config supplies explicit no-op key/mouse bindings: labwc otherwise
+loads terminal/menu defaults when no binding entries exist. It does not invoke
+stock desktop autostart, panels, wallpaper managers or settings tools.
 
-Close all Cloudplay Chromium windows first. The helper hashes the exact bytes
-it extracts, rejects links/path traversal/nonregular files/oversized payloads,
-requires an MV3 root manifest, and stages files under a root-owned version
-directory. It makes files 0444/directories 0555 and atomically replaces the
-`/opt/gfn-pi-compat` symlink. These are user-immutable permissions, **not**
-filesystem verity, `chattr +i`, or protection from root. The previous version
-is retained. Restart Chromium and verify extension version/behavior; a running
-browser can retain old extension state across the filesystem switch.
+The child supervisors only signal their own newly created process groups.
+Short-lived failures back off 2/4/8/16/32 seconds, then pause five minutes after
+six failures; runs lasting at least two minutes reset the sequence. This also
+applies to intentional browser closes. No immediate crash-respawn storm or
+automatic sign-out/profile deletion is performed.
 
-Rollback is an explicit administrator operation with Chromium closed:
+## Splash and initramfs
 
-```sh
-# Choose an existing, previously reviewed /opt/cloudplay/extensions/<commit>-<sha256>.
-sudo ln -s '/opt/cloudplay/extensions/<previous-reviewed-directory>' /opt/gfn-pi-compat.rollback
-sudo mv -Tf /opt/gfn-pi-compat.rollback /opt/gfn-pi-compat
-```
+The installed `cloudplay` Plymouth script theme uses text sprites and a dark
+background. `plymouth-set-default-theme cloudplay` selects it. The recipe adds
+VC4/V3D to initramfs modules, preserves `auto_initramfs=1`, adds `quiet splash`,
+disables the firmware rainbow splash and ordinary console/status banners,
+and overrides Plymouth quit with `--retain-splash`.
 
-No background downloader, update URL, signature validation or key provision is
-present. An independently obtained trusted digest and review are prerequisites;
-HTTPS plus a checksum on the same server is not an independent trust anchor.
-The prototype `--load-extension` path is not an enterprise extension policy.
-Verify this specific Chromium package really loads the MV3 extension and that
-GFN's page receives only truthful capabilities before relying on it.
+The distro greetd unit orders after `plymouth-quit-wait.service` and conflicts
+with the VT7 getty. All auto-gettys are masked/disabled, so the handoff cannot
+land at a normal terminal login. The export hook regenerates initramfs, then
+checks that **every** kernel initrd contains the custom theme, script plugin
+and VC4 driver. pi-gen's final export regenerates the same configured initrds;
+the downloadable image must also be inspected before handoff.
 
-## Image distribution
+None of these static checks proves that Plymouth renders correctly on a
+specific CM5/Pi/display, that the kernel loads the expected firmware initrd,
+or that the transition is flicker-free. Physical boot acceptance is mandatory.
 
-CI artifacts are unsigned developer previews, not an authenticated OS release.
-SHA256SUMS detects accidental changes but cannot prove publisher identity.
-Do not create a signed public release until a signing/trust-anchor design,
-key custody, verification instructions and recovery/revocation policy exist.
-OS updates are manual reflash initially; retain a known-good spare card.
-Do not upload browser profiles, Wi-Fi secrets or diagnostic tokens with public
-acceptance reports. Auth/session information is sensitive.
+## Network provisioning and recovery
 
-## Why a stock desktop
+Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
+from `file:///boot/firmware` and NetworkManager via netplan. Default `user-data`
+contains `users: []` and disables SSH password login. Default `network-config`
+requests Ethernet DHCP. Wi-Fi can be provisioned before first boot using the
+README's network-config example. Skip Imager account/SSH customization; the
+legacy `userconf` route is intentionally removed. Arbitrary replacement
+user-data is privileged physical provisioning, not untrusted kiosk input.
 
-### Official release baseline checked 2026-09-16
+There is no local admin password, general desktop, terminal greeter or settings
+application. Offline media maintenance or a separately provisioned trusted
+admin method is required. Protect boot configuration and browser profiles.
+For reflash, boot another root device and have the operator identify/unmount
+the target. Never overwrite mounted/running root storage.
 
-The latest official Raspberry Pi OS 64-bit desktop image is **2026-09-15**,
-Debian **13/Trixie**, kernel **6.18.50**. Its published `.info` identifies
-pi-gen commit `2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268` (committed
-**2026-09-14 17:11:54 UTC**), also tagged
-`2026-09-15-raspios-trixie-arm64`. This is a released-image reference, not
-an assumption that current upstream HEAD is a release.
+## Browser/extension security debt
 
-Cloudplay already pins `74d08a337bd29da289b9aedbe5b48c79fb2e5a03`
-(**2026-09-16 14:45:05 UTC**), the upstream **arm64** branch HEAD at review.
-It contains that release commit plus five history entries (including two
-merges). The net changes are build-host fixes: `udevadm settle -t 10`,
-Docker binfmt handling, ARM64 dependency naming and documentation. No image
-stage, desktop or owner-onboarding recipe files differ. Upstream's default
-`master` branch is not the ARM64 target.
+All four v0.4.1 Chromium packages are held together. An ordinary apt upgrade
+does **not** patch browser vulnerabilities. Maintainers must monitor advisories,
+review replacements in the separate browser project, update all four digests
+and the actual Debian version, then rebuild/retest. The image workflow does not
+recompile Chromium. No automatic browser updater or maximum-age gate exists.
 
-**Decision: retain the current verified pin and Trixie config.** Replacing it
-with the release tag would roll back useful build fixes rather than update the
-OS. The successful first Cloudplay build already contains the new release's
-kernel, firmware and desktop stack. Comparison against the official image's
-package inventory found:
+The browser profile is 0700 but is not encrypted at rest. `--password-store=basic`
+avoids an impossible desktop-keyring unlock prompt on a locked kiosk account.
+Physical access exposes the persistent NVIDIA session. Kiosk mode is UI, not
+a browser navigation security boundary. Never use root or disable sandboxing.
 
-| Component | Official 2026-09-15 and Cloudplay first image |
-| --- | --- |
-| Pi 5 kernel metapackage | `1:6.18.50-1+rpt1` |
-| raspi-firmware | `1:1.20260907-1` |
-| labwc | `0.20.1-1+rpt1` |
-| wlroots | `0.20.2-1+rpt3` |
-| Mesa | `26.2.2-1~bpo13+0~rpt1` |
-| rpd-wayland-core / wf-panel-pi | `1.29` / `1.31` |
-| piwiz / userconf-pi | `1.8` / `0.19` |
-| cloud-init | `25.2-1~bpo13+1+rpt20` |
+The extension installer verifies a local reviewed commit/archive SHA256,
+rejects traversal/links/nonregular files/oversized archives, stages root-owned
+0555 directories and 0444 files, then atomically replaces `/opt/gfn-pi-compat`.
+This is not signed OTA or verity. Retained versions allow an administrator's
+offline rollback. Close the kiosk before switching versions; do not mutate the
+active extension under a running browser.
 
-Cloudplay's apt build also picked up newer `pcmanfm-pi` 1.7 (official 1.6),
-`pishutdown` 0.42 (0.41), `wfplug-imenu` 0.10 (0.9), the three network-panel
-packages at 1.18 (1.17), and `mkvtoolnix` `92.0-1+deb13u1` (`92.0-1`).
-This is not byte-identical to the official desktop image: Cloudplay deliberately
-uses stages 0–3 plus its appliance stage rather than official stage4, retains a
-separately pinned custom browser, and resolves unsnapshotted apt repositories.
-No OS-only rebuild is necessary to obtain the September release baseline;
-the next coordinated browser revision still needs a fresh build and acceptance.
+## OS release provenance and HDR limits
 
-Sources:
-- [Official downloads and release date](https://www.raspberrypi.com/software/operating-systems/)
-- [September release notes](https://downloads.raspberrypi.com/raspios_arm64/release_notes.txt)
-- [Official September image provenance and package inventory](https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-09-15/2026-09-15-raspios-trixie-arm64.info)
-- [Released ARM64 recipe tag](https://github.com/RPi-Distro/pi-gen/tree/2026-09-15-raspios-trixie-arm64)
-- [Exact released-to-pinned recipe comparison](https://github.com/RPi-Distro/pi-gen/compare/2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268...74d08a337bd29da289b9aedbe5b48c79fb2e5a03)
+Official Raspberry Pi OS Trixie ARM64 **2026-09-15** identifies release recipe
+`2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268` (September 14 17:11:54 UTC).
+Our retained pin `74d08a337bd29da289b9aedbe5b48c79fb2e5a03`
+(September 16 14:45:05 UTC) is that release plus build-host fixes:
+`udevadm settle -t 10`, Docker binfmt handling, ARM64 dependency naming/docs.
+It does not add desktop-stage changes. It is not falsely labeled the release
+commit, and default `master` is not the ARM64 branch.
 
-### Preserving desktop and onboarding
+The earlier built images installed kernel 6.18.50, labwc 0.20.1, wlroots 0.20.2
+and Mesa 26.2.2, matching the September official stack. Apt remains
+unsnapshotted; the new kiosk's inventory is authoritative for its exact versions.
+Labwc is retained without the desktop for future HDR investigation.
 
-At pinned pi-gen commit `74d08a337bd29da289b9aedbe5b48c79fb2e5a03`,
-stage3 installs `rpd-wayland-core`, `rpd-x-core`, `rpd-preferences` and
-`rpd-theme`; stage4 adds applications/developer/graphics/utilities/extras.
-The README's historical LXDE wording is not sufficient to choose a modern
-session. The recipe retains stage3 and explicitly selects labwc via
-`raspi-config nonint do_wayland W2`; it does not replace compositor configs.
-Current `rpd-wayland-core` dependencies provide panel network/Bluetooth/audio
-plugins; its `/etc/xdg/labwc/autostart` runs `lxsession-xdg-autostart`.
-This was checked against `rpd-wayland-core` 1.29 and the W2 selector against
-`raspi-config-core` 20260730 in the Trixie apt repository. These apt packages
-float and must be revalidated at image-build time.
+`cloudplay-hdr-check` only checks upstream version floors: labwc >=0.20.0 and
+linked wlroots >=0.20.1. HDR10 additionally requires a working Vulkan renderer,
+Pi V4L2 HEVC Main10 SAND/dmabuf import, genuine GFN service entitlement/color
+signaling, browser color management, KMS/HDMI metadata and physical display
+verification. Version floors, HDR-coded local clips or tone-mapped SDR are not
+HDR output acceptance. No unverified renderer or HDR-enabling flags are added.
 
-The stock export `01-user-rename/01-run.sh` calls `rename-user -f -s`, creating
-the isolated `rpi-first-boot-wizard` session and enabling userconfig. The recipe
-sets desktop autologin **before** that export hook and never removes piwiz.
-Normal owner launch is gated while the wizard autostart file exists. If a
-future userconf package leaves this file behind, investigate onboarding rather
-than bypassing the guard with a privileged launch.
+## Distribution
 
-Labwc is a practical onboarding/recovery MVP, **not evidence of an HDR-capable
-presentation path**. No SDR-only forced color profile, fixed 1080p output,
-8-bit override or permanently SDR-specific compositor fork is baked in.
-End-to-end HDR may require upgrading labwc/wlroots, kernel, Mesa or Chromium;
-switching compositor families is not inherently necessary.
+Artifacts are unsigned developer previews. SHA256 detects corruption but is
+not an independent publisher trust anchor. A signed release needs a separately
+reviewed signing/key-custody/verification/revocation/recovery design. Do not
+publish Wi-Fi secrets, browser cookies, tokens or identifying diagnostics.
 
-## Labwc HDR prerequisites
+## Verified sources
 
-Upstream release notes explicitly document **labwc 0.20.0 (2026-05-25)** adding
-HDR10 output with the **Vulkan renderer**, introduced by PR #3424. The upstream
-release series current at investigation includes **0.20.2 (2026-08-21)**.
-The 0.20 series requires **wlroots >=0.20.1 and <0.21.0**; labwc's upstream
-build also requires **libinput >=1.26**. Check the complete build dependencies
-if planning a compositor upgrade, not only these HDR-related version floors.
-The 0.9.x maintenance branch still uses wlroots 0.19 and should not be mistaken
-for the 0.20 HDR-capable series. Do not infer the distro's package version from
-the latest upstream release.
-
-The first image (run
-[35138972856](https://github.com/sslivins/cloudplay-os/actions/runs/35138972856),
-source `d90abfed4c1e474f3ca85df6d5b0a95db802f55b`) actually installed labwc
-**0.20.1**, linked to wlroots **0.20.2**. Its embedded diagnostic reports
-`version-floors-met-hdr-still-unvalidated`. This removes the old-version
-prerequisite blocker for that image only, not the renderer/import/display
-acceptance requirements below.
-
-`cloudplay-hdr-check` reads the installed `/usr/bin/labwc --version`, including
-the linked wlroots version printed by the newer series. It diagnoses an old
-version as blocked, missing/unrecognized evidence as unknown, and suitable
-versions as **version floors met, HDR still unvalidated**. It is not a probe of
-the active compositor process, Vulkan device/renderer, output mode or HDR state.
-Its report is also recorded in the build manifest. An unknown or blocked report
-does not prevent creating the initial onboarding/SDR preview image.
-
-Even meeting both version floors is insufficient. Confirm that wlroots was
-built with Vulkan support and that the running session really uses a working
-Vulkan renderer on Pi 5. Validate the actual **V4L2 HEVC Main10 SAND/dmabuf import
-and presentation path** across decoder, Chromium, compositor and Mesa; do not
-assume successful SAND import through another renderer proves Vulkan can
-present the same surfaces correctly. Validate transfer functions, color space,
-bit depth, output metadata and physical display HDR in the acceptance matrix.
-No unverified HDR switches, renderer environment settings, output configuration
-keys or compositor-package replacements are installed by this prototype.
-
-Sources:
-- [Pinned pi-gen README](https://github.com/RPi-Distro/pi-gen/blob/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/README.md)
-- [Pinned stage3](https://github.com/RPi-Distro/pi-gen/tree/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/stage3)
-- [Pinned user-rename hook](https://github.com/RPi-Distro/pi-gen/blob/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/export-image/01-user-rename/01-run.sh)
-- [Stock rename-user implementation](https://github.com/RPi-Distro/userconf-pi/blob/master/rename-user)
-- [Pi Trixie ARM64 package metadata](https://archive.raspberrypi.com/debian/dists/trixie/main/binary-arm64/Packages.gz)
-- [Labwc release notes, including 0.20.0 HDR10](https://github.com/labwc/labwc/blob/master/NEWS.md#0200---2026-05-25)
-- [Labwc HDR10 output PR #3424](https://github.com/labwc/labwc/pull/3424)
-- [Labwc build dependencies](https://github.com/labwc/labwc/blob/master/meson.build)
-- [Labwc version-output implementation](https://github.com/labwc/labwc/blob/master/src/main.c)
+- [Pinned user creation](https://github.com/RPi-Distro/pi-gen/blob/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/stage1/01-sys-tweaks/00-run.sh)
+- [Pinned Lite user/groups and root locking](https://github.com/RPi-Distro/pi-gen/blob/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/stage2/01-sys-tweaks/01-run.sh)
+- [Stock export user rename being omitted](https://github.com/RPi-Distro/pi-gen/blob/74d08a337bd29da289b9aedbe5b48c79fb2e5a03/export-image/01-user-rename/01-run.sh)
+- [greetd configuration and initial/default sessions](https://manpages.debian.org/trixie/greetd/greetd.5.en.html)
+- [greetd 0.10.3-4 PAM/logind/UID-drop implementation](https://sources.debian.org/src/greetd/0.10.3-4/greetd/src/session/worker.rs/)
+- [labwc session command and D-Bus environment](https://manpages.debian.org/trixie/labwc/labwc.1.en.html)
+- [labwc explicit/default bindings](https://manpages.debian.org/trixie/labwc/labwc-config.5.en.html)
+- [Plymouth text sprites and callbacks](https://www.freedesktop.org/wiki/Software/Plymouth/Scripts/)
+- [Official September image provenance](https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-09-15/2026-09-15-raspios-trixie-arm64.info)
+- [Released-to-pinned recipe diff](https://github.com/RPi-Distro/pi-gen/compare/2c235fa703cacb65e0fe0b2ab2fcb23d44dfd268...74d08a337bd29da289b9aedbe5b48c79fb2e5a03)
+- [Labwc HDR10 support](https://github.com/labwc/labwc/pull/3424)

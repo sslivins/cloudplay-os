@@ -1,13 +1,14 @@
-IMG_NAME='cloudplay-os-preview'
-PI_GEN_RELEASE='Cloudplay OS unvalidated developer preview'
+IMG_NAME='cloudplay-os-kiosk-preview'
+PI_GEN_RELEASE='Cloudplay OS kiosk developer preview'
 RELEASE='trixie'
 TARGET_HOSTNAME='cloudplay'
-FIRST_USER_NAME='pi'
+FIRST_USER_NAME='cloudplay'
 FIRST_USER_PASS=''
+# The stock export user-rename hook is omitted, not run with a shared password.
 DISABLE_FIRST_BOOT_USER_RENAME=0
 PASSWORDLESS_SUDO=0
 ENABLE_SSH=0
 ENABLE_CLOUD_INIT=1
 DEPLOY_COMPRESSION='xz'
 COMPRESSION_LEVEL=3
-STAGE_LIST='stage0 stage1 stage2 stage3 stage-cloudplay'
+STAGE_LIST='stage0 stage1 stage2 stage-cloudplay'

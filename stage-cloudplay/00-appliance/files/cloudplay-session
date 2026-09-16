@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$(id -u)" == 1000 && "$(id -un)" == cloudplay ]] || exit 1
+[[ -d "${XDG_RUNTIME_DIR:-}" && "$(stat -c %u "$XDG_RUNTIME_DIR")" == "$(id -u)" ]] || exit 1
+umask 077
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=labwc
+unset GREETD_SOCK
+exec /usr/local/lib/cloudplay/supervise.py \
+    /usr/bin/dbus-run-session -- /usr/bin/labwc -C /etc/cloudplay/labwc \
+    -S /usr/local/bin/cloudplay-browser-session

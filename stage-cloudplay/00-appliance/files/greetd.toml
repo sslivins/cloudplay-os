@@ -1,0 +1,14 @@
+[terminal]
+vt = 7
+switch = true
+
+[general]
+source_profile = false
+
+[initial_session]
+command = "/usr/bin/systemd-cat --identifier=cloudplay-session /usr/local/bin/cloudplay-session"
+user = "cloudplay"
+
+[default_session]
+command = "/usr/bin/systemd-cat --identifier=cloudplay-session /usr/local/bin/cloudplay-session"
+user = "cloudplay"

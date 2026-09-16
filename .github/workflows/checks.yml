@@ -13,6 +13,6 @@ jobs:
       - run: python3 scripts/artifacts.py validate --allow-unset
       - name: Shell syntax
         run: |
-          find scripts stage-cloudplay -type f \( -name '*.sh' -o -name 'cloudplay-start' -o -name 'cloudplay-settings' \) -print0 |
+          find scripts stage-cloudplay -type f \( -name '*.sh' -o -name 'cloudplay-start' -o -name 'cloudplay-session' -o -name 'cloudplay-browser-session' -o -name 'labwc-autostart' \) -print0 |
             xargs -0 -r -n1 bash -n
           bash -n config

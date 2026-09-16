@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Cloudplay OS
+Description=Cloudplay OS kiosk startup
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/cloudplay
+ScriptFile=/usr/share/plymouth/themes/cloudplay/cloudplay.script

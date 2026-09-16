@@ -1,27 +1,30 @@
-CLOUDPLAY OS IS AN UNVALIDATED DEVELOPER PREVIEW, NOT A SECURE PRODUCT RELEASE.
+CLOUDPLAY OS IS AN UNSIGNED, HARDWARE-UNVALIDATED KIOSK PREVIEW.
 
-Chromium, chromium-common, chromium-sandbox and chromium-l10n are intentionally
-held at a coordinated custom HEVC build. Ordinary OS upgrades WILL NOT update
-these browser packages. This browser processes untrusted web content. A hold
-can leave exploitable vulnerabilities unpatched. Do not use this image as your
-general browsing workstation. Maintainers must monitor Chromium security
-advisories and replace all four packages together, update the digest manifest,
-then repeat sandbox, sign-in, extension and streaming acceptance tests.
-There is no automatic browser or extension security update service.
+The fixed cloudplay account (UID 1000) and root have locked passwords.
+There is no universal password, OS owner wizard, desktop or default SSH.
+greetd opens a real PAM/logind session, then runs the minimal Wayland compositor
+and Chromium as cloudplay. Never add --no-sandbox, root-browser execution or
+remote-debugging switches. The normal Chromium sandbox remains enabled.
 
-Chromium runs as your local user with its normal sandbox. Never add
---no-sandbox, --disable-setuid-sandbox or remote-debugging flags. The packaged
-unpacked extension is root-owned and read-only to users; only an administrator
-can replace it. Chromium's --load-extension support must be tested on this build.
-The extension is a capability-gating prototype, not a promise of HEVC or HDR.
+Anyone with physical access can use the persisted NVIDIA/browser session.
+The browser profile is private to cloudplay (0700) but is NOT encrypted at rest.
+The basic browser password store avoids a desktop keyring unlock dialog; do not
+save unrelated passwords. Kiosk mode is an appliance UI, not an isolation or
+browser navigation security boundary. Protect the device and removable media.
 
-The desktop automatically logs in the owner for appliance use. Anyone with
-physical access can access this desktop and persisted GFN/browser sessions.
-Use raspi-config to disable desktop autologin if that is unacceptable.
-Local administrator actions require the owner's password. SSH is off.
-No shared owner password, telemetry/backend, signed OTA, or verified boot is
-provided. Public signed images require a separately reviewed trust anchor.
+All four custom Chromium packages are apt-held. Normal OS upgrades DO NOT
+deliver browser security fixes. Maintainers must review Chromium advisories,
+replace all four packages together, update the digest manifest, and retest.
+The extension is root-owned/read-only to cloudplay and updated only by an
+administrator with an independently reviewed commit and archive digest.
+There is no automatic browser/extension updater, signed OTA or verified boot.
 
-OS recovery is manual reflash. Reflash erases local settings and browser login.
-Back up deliberately; browser profiles contain credentials/session cookies.
-Checksums detect corruption but do not authenticate an untrusted download.
+Network provisioning files on the boot partition are privileged configuration.
+Use Ethernet DHCP or the documented first-boot network-config. The supported
+image has no terminal greeter, Wi-Fi setup wizard, recovery partition or admin
+password. Recovery is offline media editing or reflash from a separate system;
+never overwrite a running root filesystem. Profiles contain session credentials.
+
+Checksums detect corruption, not publisher identity. A separately reviewed
+signing/trust/revocation design is required before trusted public distribution.
+Local HEVC fixtures are not proof of GFN gameplay, 4K decoding or HDR output.

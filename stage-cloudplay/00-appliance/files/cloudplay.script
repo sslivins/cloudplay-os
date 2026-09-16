@@ -1,0 +1,15 @@
+Window.SetBackgroundTopColor(0.025, 0.035, 0.07);
+Window.SetBackgroundBottomColor(0.025, 0.035, 0.07);
+title_image = Image.Text("Cloudplay OS", 0.94, 0.97, 1, 1, "Sans 42");
+subtitle_image = Image.Text("Starting your cloud gaming session", 0.42, 0.76, 0.94, 1, "Sans 16");
+title = Sprite(title_image);
+subtitle = Sprite(subtitle_image);
+
+fun refresh() {
+    title.SetPosition(Window.GetX() + (Window.GetWidth() - title_image.GetWidth()) / 2,
+        Window.GetY() + Window.GetHeight() / 2 - title_image.GetHeight(), 10);
+    subtitle.SetPosition(Window.GetX() + (Window.GetWidth() - subtitle_image.GetWidth()) / 2,
+        Window.GetY() + Window.GetHeight() / 2 + 22, 10);
+}
+Plymouth.SetRefreshFunction(refresh);
+refresh();
