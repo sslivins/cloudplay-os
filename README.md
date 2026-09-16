@@ -1,6 +1,6 @@
 # Cloudplay OS — Pi 5 developer preview
 
-An **unbuilt, hardware-unvalidated prototype** of a Raspberry Pi OS Trixie
+An **image-built, hardware-unvalidated prototype** of a Raspberry Pi OS Trixie
 appliance that opens GeForce NOW after normal owner onboarding. **4K60 and HDR
 are product goals, not delivered capabilities.** Earlier lab evidence was
 1080p60 SDR only, on a different configuration; this image and extension have
@@ -19,6 +19,35 @@ startup crash (`xkb_state_update_mask`) seen in a separate Sway diagnostic
 configuration. A temporary diagnostic keyboard-device workaround is not
 included here. The stock labwc/physical-keyboard path remains untested, and a
 successful image build does not establish that startup or input works.
+
+## First image build — 2026-09-16
+
+[ARM64 workflow run 35138972856](https://github.com/sslivins/cloudplay-os/actions/runs/35138972856)
+succeeded at source commit `d90abfed4c1e474f3ca85df6d5b0a95db802f55b`.
+The unsigned artifact is
+`cloudplay-os-unsigned-preview-d90abfed4c1e474f3ca85df6d5b0a95db802f55b`
+(CI retention expires **2026-09-23**). It contains
+`image_2026-09-16-cloudplay-os-preview.img.xz`, `SHA256SUMS`, a bmap, and
+`provenance/`. The image is 1,131,860,020 compressed bytes, 4,600 MiB unpacked:
+
+```text
+ba0909794e50419f66a457ff1883325b17778de587491e7575aa8a04ad82c680  image_2026-09-16-cloudplay-os-preview.img.xz
+```
+
+The downloaded checksum and xz integrity passed. Read-only filesystem
+inspection confirmed embedded provenance matches the external copy, all four
+browser packages have the pinned version and hold, the Chromium sandbox helper
+is root-owned mode 4755, and the extension is root-owned mode 0555/0444.
+LightDM selects the stock labwc wizard session; root, placeholder owner and
+wizard passwords are locked, SSH is not enabled, and both wizard and guarded
+Cloudplay autostart files are present.
+
+The built desktop reports **labwc 0.20.1 / wlroots 0.20.2**: HDR version floors
+are met, but Vulkan rendering, SAND import, real service entitlement and
+physical HDR output are still unvalidated. **Nothing has been flashed or
+boot-tested.** These static checks do not pass the physical acceptance matrix.
+
+## Display target
 
 The intended target is **3840×2160 at 60 fps with genuine HDR display output**.
 The preview does not cap browser/display resolution or remove GFN high-resolution

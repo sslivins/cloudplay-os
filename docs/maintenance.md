@@ -98,6 +98,14 @@ The 0.9.x maintenance branch still uses wlroots 0.19 and should not be mistaken
 for the 0.20 HDR-capable series. Do not infer the distro's package version from
 the latest upstream release.
 
+The first image (run
+[35138972856](https://github.com/sslivins/cloudplay-os/actions/runs/35138972856),
+source `d90abfed4c1e474f3ca85df6d5b0a95db802f55b`) actually installed labwc
+**0.20.1**, linked to wlroots **0.20.2**. Its embedded diagnostic reports
+`version-floors-met-hdr-still-unvalidated`. This removes the old-version
+prerequisite blocker for that image only, not the renderer/import/display
+acceptance requirements below.
+
 `cloudplay-hdr-check` reads the installed `/usr/bin/labwc --version`, including
 the linked wlroots version printed by the newer series. It diagnoses an old
 version as blocked, missing/unrecognized evidence as unknown, and suitable
