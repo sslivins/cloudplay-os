@@ -4,7 +4,7 @@ An **image-built, hardware-unvalidated prototype** of a Raspberry Pi OS Trixie
 appliance that opens GeForce NOW after normal owner onboarding. **4K60 and HDR
 are product goals, not delivered capabilities.** Earlier lab evidence was
 1080p60 SDR only, on a different configuration; this image and extension have
-not passed acceptance. A separate Pi 5 experiment used normal UID1000,
+not passed acceptance. A separate Pi 5 experiment using earlier v0.4.0 used normal UID1000,
 sandboxed Chromium and the MAIN-world compatibility extension to stream the
 GFN LEGO Bricktales demo: H265 profile 1, `V4L2VideoDecoder`,
 `powerEfficient=true`, 1920×1080 at about 60 fps. Over 121.6 seconds it decoded
@@ -14,17 +14,31 @@ this image's acceptance. The test display is 1080p and the account is Free;
 neither 4K nor HDR acceptance is possible on that setup.
 NVIDIA affiliation/support is not implied.
 
-**Known browser blocker:** v0.4.0 has an unresolved Wayland keyboard-state
-startup crash (`xkb_state_update_mask`) seen in a separate Sway diagnostic
-configuration. A disposable `about:blank` reproduction, without GFN or the
-extension, observed `wl_keyboard.enter` followed by modifiers before any
-keymap arrived. A conditional GDB breakpoint confirmed a null state pointer
-passed to `xkb_state_update_mask`; this is not merely a keyboard-absence
-hypothesis. A corrected browser build is pending and is **not included** in
-this image. The stock labwc/physical-keyboard path remains untested, and a
-successful image build does not establish that startup or input works.
+## Current browser revision — v0.4.1
 
-## First image build — 2026-09-16
+The current recipe pins the published
+[Chromium HEVC v0.4.1 release](https://github.com/sslivins/chromium-rpi-hevc/releases/tag/v0.4.1),
+Debian version `1:152.0.7977.82-1~deb13u1+rpt2`. All four package downloads
+were independently SHA256-verified. The extracted packaged browser has ELF
+BuildID `ead10187a8df80ef5b7683ad3e113baef22016cb`.
+
+This revision guards the confirmed pre-keymap null keyboard state that crashed
+v0.4.0. An isolated `about:blank` reproduction had observed
+`wl_keyboard.enter` followed by modifiers before any keymap arrived; GDB
+confirmed the null argument to `xkb_state_update_mask`, without GFN or the
+extension. Seven keyboard unit tests passed, including three new regressions.
+
+The **actual .deb-extracted browser**, not just the earlier pre-packaging
+binary, passed five local **1080p** HEVC fixtures on Pi 5 as sandboxed UID1000:
+8-bit, 10-bit, HDR-coded content and weighted-prediction 8/10-bit. Evidence
+included V4L2 decoder logs, the browser's own `/dev/video19` descriptors,
+image/motion checks, and each fresh launch exercising the missing-keymap guard
+without crashing. This is **not GFN gameplay, 4K decoding or physical HDR
+output validation**, nor boot/onboarding/input acceptance of the Cloudplay
+image. The original v0.4.0 image below remains a historical artifact and does
+not contain the guard.
+
+## First image build — 2026-09-16 (historical v0.4.0)
 
 [ARM64 workflow run 35138972856](https://github.com/sslivins/cloudplay-os/actions/runs/35138972856)
 succeeded at source commit `d90abfed4c1e474f3ca85df6d5b0a95db802f55b`.
@@ -77,8 +91,8 @@ as validated. See [the concrete HDR prerequisites](docs/maintenance.md#labwc-hdr
 
 - Pinned ARM64 pi-gen stages 0–3 plus a real appliance stage, preserving stock
   Pi desktop/labwc, display controls, Wi-Fi/Bluetooth UI and first-boot wizard.
-- Existing Chromium HEVC v0.4.0 packages (152.0.7977.75), SHA256 checked; **no
-  browser rebuild**. Generic V4L2 HEVC Main/Main10 SAND patches are not GFN-
+- Existing Chromium HEVC v0.4.1 packages (152.0.7977.82), SHA256 checked; **no
+  browser rebuild in this image workflow**. Generic V4L2 HEVC Main/Main10 SAND patches are not GFN-
   specific and do not establish end-to-end HDR.
 - Separate root-owned, user-read-only MV3 `gfn-pi-compat` extension at
   `/opt/gfn-pi-compat`. Its capability gating and this Chromium build's

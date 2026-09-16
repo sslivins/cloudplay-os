@@ -7,6 +7,16 @@ HDMI port, display model/firmware/EDID and exact GFN account tier/game/region.
 Redact accounts, tokens and public IPs. Mark each item **not run/pass/fail** with
 timestamp and evidence. All items below are currently **not run for this image**.
 
+Separate browser-only evidence exists for
+[v0.4.1](https://github.com/sslivins/chromium-rpi-hevc/releases/tag/v0.4.1):
+the actual packaged browser, BuildID
+`ead10187a8df80ef5b7683ad3e113baef22016cb`, passed five local 1080p HEVC
+fixture/image/motion tests with normal-user sandboxing and V4L2 device evidence,
+including the pre-keymap keyboard guard on every fresh launch. All seven
+keyboard unit tests passed. These results do not pass any Cloudplay first-boot
+row below and are not GFN interactive gameplay, 4K decode or HDR display proof.
+The earlier v0.4.0 live GFN stream evidence is a different browser revision.
+
 ## Boot, owner and escape
 
 - Flash a spare card; verify SHA256. First boot without Imager customization:

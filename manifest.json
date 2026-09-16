@@ -8,25 +8,25 @@
   },
   "browser": {
     "repository": "sslivins/chromium-rpi-hevc",
-    "release": "v0.4.0",
-    "version": "152.0.7977.75-1.deb13u1+rpt1",
-    "package_version": "1:152.0.7977.75-1~deb13u1+rpt1",
+    "release": "v0.4.1",
+    "version": "152.0.7977.82-1.deb13u1+rpt2",
+    "package_version": "1:152.0.7977.82-1~deb13u1+rpt2",
     "assets": [
       {
-        "filename": "chromium_152.0.7977.75-1.deb13u1+rpt1_arm64.deb",
-        "sha256": "e4179a316331ccca85eacd6235040be8c1c7cd8291aec89adb50637900b5a38c"
+        "filename": "chromium_152.0.7977.82-1.deb13u1+rpt2_arm64.deb",
+        "sha256": "c2a3713047dc9b5f13eab2ff149f2ef776e39c8447d32d0ddc18d98d5c762a00"
       },
       {
-        "filename": "chromium-common_152.0.7977.75-1.deb13u1+rpt1_arm64.deb",
-        "sha256": "c64911b0a6681001eb6a3dbc38560af253fad009a3f530937ab6e3b5a07935d7"
+        "filename": "chromium-common_152.0.7977.82-1.deb13u1+rpt2_arm64.deb",
+        "sha256": "2c084b38a4a6cc78ef7ce6209685aa4750b0518b310e86a5fd4ad356297b6188"
       },
       {
-        "filename": "chromium-sandbox_152.0.7977.75-1.deb13u1+rpt1_arm64.deb",
-        "sha256": "4fba4e1247bca1a5127050ccd81acaec4da87943a4f0d35a6aa13ff2d14f9e3d"
+        "filename": "chromium-sandbox_152.0.7977.82-1.deb13u1+rpt2_arm64.deb",
+        "sha256": "da113fd42f73ecee2497481a83c524facabdd48fe18dd6dbdae1b1ce2b17ae90"
       },
       {
-        "filename": "chromium-l10n_152.0.7977.75-1.deb13u1+rpt1_all.deb",
-        "sha256": "79f7a0a17fc51c29792a12e4ea92cf97493037d6cebec1f59fa121d2234e3957"
+        "filename": "chromium-l10n_152.0.7977.82-1.deb13u1+rpt2_all.deb",
+        "sha256": "e8293b21803ac9b85c7bab74ad36fea63ff592c235a32b0529b3e3dbded8ca8a"
       }
     ]
   },

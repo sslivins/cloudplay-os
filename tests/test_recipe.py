@@ -83,7 +83,7 @@ class PinsTest(unittest.TestCase):
 
     def test_package_version_is_distinct_from_asset_filename_version(self):
         value = self.finalized()
-        self.assertEqual(value["browser"]["package_version"], "1:152.0.7977.75-1~deb13u1+rpt1")
+        self.assertEqual(value["browser"]["package_version"], "1:152.0.7977.82-1~deb13u1+rpt2")
         self.assertNotEqual(value["browser"]["package_version"], value["browser"]["version"])
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         self.assertIn('lock["browser"]["package_version"]', stage)
