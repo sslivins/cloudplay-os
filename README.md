@@ -23,6 +23,7 @@ test. No claim of interactive GFN gameplay, 4K decoding or HDR output is made.
   PAM is retained; no `pam_permit` password-authentication workaround is added.
 - **labwc** uses a root-owned minimal configuration, explicit no-op shortcuts
   instead of default terminal/menu bindings, and no desktop autostart.
+  Client click-to-focus/raise remains enabled for browser sign-in windows.
   A real D-Bus session and PipeWire/WirePlumber provide session/audio plumbing.
 - Chromium runs nonroot with its **normal sandbox**, `--kiosk`, native Wayland,
   `--use-angle=gles`, the reviewed compatibility extension, and no debug listener.

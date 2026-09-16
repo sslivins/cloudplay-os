@@ -270,6 +270,11 @@ class RecipeSafetyTest(unittest.TestCase):
         xml = ElementTree.parse(files / "labwc-rc.xml").getroot()
         self.assertTrue(xml.findall("./keyboard/keybind"))
         self.assertTrue(xml.findall("./mouse/context/mousebind"))
+        client = xml.find("./mouse/context[@name='Client']")
+        self.assertIsNotNone(client)
+        self.assertEqual({binding.get("button") for binding in client}, {"Left", "Middle", "Right"})
+        for binding in client:
+            self.assertEqual([action.get("name") for action in binding], ["Focus", "Raise"])
         self.assertFalse(xml.findall(".//default"))
         self.assertFalse(xml.findall(".//action[@name='Execute']"))
         packages = (ROOT / "stage-cloudplay/00-appliance/00-packages-nr").read_text().split()
