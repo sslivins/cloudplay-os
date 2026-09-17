@@ -1,20 +1,10 @@
-# Kiosk physical acceptance — not yet passed
+# Kiosk hardware acceptance
 
-The earlier desktop image was booted and rejected: it exposed Raspberry Pi's
-desktop and OS setup rather than the requested appliance. The **new Lite
-kiosk design is not yet physically boot-validated**. Its first reported boot of
-image `35168527444` failed: a localhost attempt, then black screen with cursor.
-Source/image defects in network initialization, truncated HTTP handling and
-home-directory ownership are reproduced and fixed in source. A subsequent
-animated splash/network gate is also source-only until operator testing.
-Complete physical recovery remains unverified. Record each item below
-as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
-
-The 1920×1080 splash artwork was approved on 2026-09-16. Build `35168527444`
-includes that exact PNG and **Agora-style appliance Wi-Fi onboarding**, and
-has passed download-integrity and independent image inspection. Earlier kiosk
-images predate both refinements; do not treat their placeholder text splash or
-manual `network-config` support as acceptance of those requirements.
+Use this checklist for each candidate image. Record each item as not-run,
+pass or fail with evidence; a successful build does not establish hardware
+compatibility. Ethernet startup and direct browser launch have been exercised
+on a corrected CM5 test installation, but that does not pass this matrix for
+a newly built image or establish gameplay, Wi-Fi or HDR support.
 
 Record image SHA256/source commit, build-manifest/kiosk-verification reports,
 actual kernel/Mesa/labwc versions, board (including CM5 versus Pi5), RAM, boot
@@ -30,8 +20,8 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   prior media/artifacts. No automatic flashing is included in the build.
 - Cold boot shows **Cloudplay OS** branding, not the stock Pi desktop, rainbow
   screen, account wizard or normal terminal banner.
-- Compare the main art against the approved PNG: only its baked footer is replaced
-  by one live spinner/status; no duplicate text/spinner,
+- Compare the main art against the current background asset. Confirm one
+  live spinner above a separate status line, no static dots or duplicate text,
   native-size appearance at 1080p and no cropping/distortion at other sizes.
 - Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
   from the selected initramfs, hands off to Chromium and has no long black gap.

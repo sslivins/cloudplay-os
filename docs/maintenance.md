@@ -1,9 +1,8 @@
 # Kiosk architecture, maintenance and trust
 
-## Lite boot, not the rejected desktop
+## Lite boot architecture
 
-The old desktop preview was physically booted and rejected. The new recipe
-uses only pi-gen stages 0–2 plus Cloudplay, with no stage3 desktop metapackages.
+The recipe uses only pi-gen stages 0–2 plus Cloudplay, with no stage3 desktop metapackages.
 `FIRST_USER_NAME=cloudplay`, `FIRST_USER_PASS=''` creates the initial account
 without a usable password. The appliance stage explicitly locks root/cloudplay,
 sets the appliance shell and removes sudo/adm/disk membership.
@@ -42,11 +41,9 @@ automatic sign-out/profile deletion is performed.
 
 ## Splash and initramfs
 
-The source `cloudplay` Plymouth theme uses the approved 1920×1080 main artwork,
-with only its baked footer cleared following the operator's physical feedback.
-The new background differs only in the original footer rectangle; the approved
-original is retained. One 12-frame spinner and live network status occupy that
-clear area. Other sizes use centered aspect-preserving scaling, not cropping.
+The `cloudplay` Plymouth theme uses a 1920×1080 background with a clear footer.
+One 12-frame spinner sits above a separate live network-status line. Other
+sizes use centered aspect-preserving scaling, not cropping.
 Asset checksums are tested and recorded with configuration hashes. Runtime text
 uses the installed Plymouth label/font support, not Windows fonts or Pillow.
 `scripts/generate-spinner.py` reproducibly creates the tiny PNG frames using
@@ -105,8 +102,9 @@ and wireless are explicitly enabled. No board-name heuristic disables Pi5 Wi-Fi.
 
 The service cannot access `/home` or `/run/user` (`ProtectHome=yes`) and has
 a read-only filesystem except its state and own DNS configuration directory.
-It receives only network/bind capabilities. There is no shell/command endpoint,
-sudo-group grant or shared OS password. Loopback port 8765 serves the local UI.
+It receives only network/bind capabilities. The helper exposes no shell/command
+endpoint and grants no administrator privileges. The Wi-Fi portal does not use
+the development SSH password. Loopback port 8765 serves the local UI.
 Mutation requires the exact Host, same Origin and a per-process token, bounded
 JSON input, supported security settings and an offline idle state. Untrusted
 strings and credentials are not logged or echoed in errors; no CORS access
@@ -133,19 +131,15 @@ renderer competes with labwc, and no CMS/player/Agora process is controlled.
 Source tests cover state gates, real local HTTP endpoints, Host/Origin/token
 rejection, secret handling, AP lifecycle ordering/cleanup, typed D-Bus settings,
 DHCP checks and profile persistence/deletion boundaries. These do not replace
-actual NetworkManager/Wi-Fi/captive-portal or boot acceptance. The refreshed
-image has now passed native build/import/unit checks and independent
-filesystem/initramfs inspection (run `35168527444`); hardware acceptance
-is still required. The artwork gate was lifted
-when the user approved the supplied preview on 2026-09-16.
+actual NetworkManager/Wi-Fi/captive-portal or boot acceptance.
 
 Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
 from `file:///boot/firmware` and NetworkManager via netplan. Default `user-data`
 contains `users: []`; the development-access helper sets `ssh_pwauth: true`
 only when the explicit preview SSH flag is enabled (false otherwise).
 Default `network-config`
-requests Ethernet DHCP. Wi-Fi can be provisioned before first boot using the
-README's network-config example. Skip Imager account/SSH customization; the
+requests Ethernet DHCP. Wi-Fi can be provisioned before first boot as described
+below. Skip Imager account/SSH customization; the
 legacy `userconf` route is intentionally removed. Arbitrary replacement
 user-data is privileged physical provisioning, not untrusted kiosk input.
 
@@ -156,13 +150,43 @@ Protect boot configuration and browser profiles.
 For reflash, boot another root device and have the operator identify/unmount
 the target. Never overwrite mounted/running root storage.
 
+### Optional boot-partition provisioning
+
+Before first boot, edit `network-config` on the FAT boot partition. Keep the
+Ethernet entry and add Wi-Fi, for example:
+
+```yaml
+version: 2
+renderer: NetworkManager
+ethernets:
+  ethernet:
+    match:
+      name: "e*"
+    dhcp4: true
+    dhcp6: true
+    optional: true
+wifis:
+  wlan0:
+    dhcp4: true
+    optional: true
+    regulatory-domain: US
+    access-points:
+      "YOUR_SSID":
+        password: "YOUR_WIFI_PASSWORD"
+```
+
+Use the actual interface name and regulatory country. These files contain
+privileged configuration and potentially Wi-Fi credentials; protect access.
+This is first-boot provisioning, not a live settings interface.
+
 ## Startup diagnostics and known preview defect
 
 The first physical boot reported for image `35168527444` (SHA256
 `2d2a1abf18a7ed8d77bf65a61c26c746824d1672bb764a277708e18fd498c18f`)
 attempted localhost setup and then showed a black screen/cursor. Image
-readback was reported to match before boot. Do not infer that the complete
-symptom is explained until the device journal is examined.
+readback matched before boot. Live diagnostics identified the failure paths
+below; targeted corrections restored direct browser startup across a reboot.
+New image revisions still require their own hardware acceptance.
 
 A **source-level cause of incorrect setup selection is reproduced**:
 NetworkManager 1.52.1 `src/core/nm-manager.c:impl_manager_enable` rejects a
@@ -208,11 +232,10 @@ Subsequent live evidence established two additional concrete failure paths:
   Recovery needs only a verified **nonrecursive** ownership repair of the
   `.config` ancestor; preserve its contents and the NVIDIA profile.
 
-These are proven source/image defects and explain observed failure paths;
-complete recovery still requires the next device run. Repeated client exits
+These defects explain the observed startup failure. Repeated client exits
 can produce a five-minute supervisor pause after six failures. Look for
 `Cloudplay child exited ...; retry in 300s`, compositor/session exits and
-Chromium stderr. New source-only phase messages distinguish temporary setup
+Chromium stderr. Startup phase messages distinguish temporary setup
 launch from persistent GFN launch. The core diagnostic fixes change no browser
 version/flags, sandbox or persistent NVIDIA profile.
 
@@ -229,12 +252,11 @@ networking and setup are broken, that fallback can show GFN's offline page,
 not pretend connectivity succeeded. The new `cloudplay-startup` journal
 identifier records safe boot phases; it does not log addresses or credentials.
 
-The source-only UX validation includes Windows/Linux regressions, actual
+UX validation includes Windows/Linux regressions, actual
 Plymouth 24.004.60 ARM64 parser acceptance (and rejection of an invalid control),
 and native systemd dependency validation against units extracted from the exact
 failed image. The latter uses executable placeholders for path checks, not
-service execution; none of these are a physical boot test. No replacement image
-is built during targeted recovery. Parent/operator installation must include
+service execution; none of these are a physical boot test. Manual installation must include
 the declared `swaybg` dependency, all runtime modules/theme assets, startup-unit
 enablement and regeneration of **every** firmware initramfs; source copies alone
 do not update the early-boot splash.
@@ -245,8 +267,8 @@ reboot.** Although the exact shipped image has `/var/log/journal`
 configuration, its vendor drop-in
 `/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf` sets
 `Storage=volatile`. The operator confirmed an empty journal directory on the
-recovered SD. The earlier inference from only the directory/main file was
-incorrect; all configuration directories must be merged.
+recovered SD. Inspect the merged settings from all configuration directories,
+not just the main file or the presence of a journal directory.
 
 The tightly coupled diagnostic update makes persistence explicit, caps system
 journals at 64 MiB (retaining 128 MiB free), caps runtime logs at 16 MiB and
@@ -255,7 +277,7 @@ the loss risk on power failure; prefer an orderly shutdown or `journalctl --sync
 when recovery access is available. It does not send logs to the boot console.
 The helper explicitly uses journal stdout/stderr with identifier
 `cloudplay-network`; browser/session output keeps `cloudplay-session`.
-The v2 filename `cloudplay-diagnostics.conf` sorts after the vendor's
+The filename `cloudplay-diagnostics.conf` sorts after the vendor's
 `40-rpi-volatile-storage.conf`; the later `syslog.conf` changes only forwarding,
 not storage. `systemd-analyze --root=... cat-config systemd/journald.conf`
 against the extracted shipped configuration proved **volatile before the
@@ -290,8 +312,8 @@ is part of this diagnosis.
 
 ### Explicit temporary development SSH
 
-The operator subsequently authorized public **`cloud` / `cloud`** SSH credentials
-in GitHub-built previews. `CLOUDPLAY_DEVELOPMENT_SSH=1` is now the deliberate
+GitHub-built development previews use public **`cloud` / `cloud`** SSH credentials.
+`CLOUDPLAY_DEVELOPMENT_SSH=1` is the deliberate
 development default. A separate UID above1000 owns that login; the browser stays
 UID1000, password-locked, nonadmin and SSH-denied. Root remains locked/SSH-denied.
 `cloud` joins the normal sudo group with an explicit `PASSWD: ALL` rule, never
@@ -314,9 +336,8 @@ sudo grant and masks SSH startup while preserving home data. It does not revoke
 live sessions or stop a running listener; those are separate operator actions.
 Export checks test the actual password hash with libcrypt (without recording
 the hash), account separation, password-required sudo, effective `sshd -T`
-policy, service enablement/masks, and cloud-init agreement. Earlier image
-artifacts and test-SD-only key access are historical, not proof this revision
-has been built or boot-tested.
+policy, service enablement/masks, and cloud-init agreement. Verify login on
+each new image; a configured policy alone does not establish successful access.
 
 ## Browser/extension security debt
 
