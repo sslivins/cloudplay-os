@@ -358,7 +358,7 @@ class LauncherWiringTest(unittest.TestCase):
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         verifier = (ROOT / "scripts/verify-kiosk.py").read_text()
         self.assertIn("launcher/{main.py,host.py,gamepad.py}", build)
-        self.assertIn("cp -a launcher/assets", build)
+        self.assertIn("cp -r launcher/assets", build)
         self.assertIn('cp -a "${inputs}/launcher"', stage)
         for file in ("main.py", "host.py", "gamepad.py"):
             self.assertIn('"' + file + '"', verifier)
