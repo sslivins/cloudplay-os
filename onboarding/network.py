@@ -66,12 +66,20 @@ class Network:
     def __init__(self):
         import dbus
         self.dbus = dbus
-        self.bus = dbus.SystemBus(private=True)
+        try:
+            self.bus = dbus.SystemBus(private=True)
+        except dbus.DBusException as error:
+            error.cloudplay_operation = "SystemBus.connect"
+            raise
         self.ap_connection = None
 
     def call(self, path, interface, method, *args):
-        obj = self.bus.get_object(NM, path)
-        return getattr(self.dbus.Interface(obj, interface), method)(*args, timeout=10)
+        try:
+            obj = self.bus.get_object(NM, path)
+            return getattr(self.dbus.Interface(obj, interface), method)(*args, timeout=10)
+        except self.dbus.DBusException as error:
+            error.cloudplay_operation = interface + "." + method
+            raise
 
     def properties(self, path, interface):
         return self.call(path, "org.freedesktop.DBus.Properties", "GetAll", interface)

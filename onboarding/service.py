@@ -29,6 +29,9 @@ def failure_code(error):
     name = get_name() if callable(get_name) else None
     if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,150}", name):
         code += ":" + name
+    operation = getattr(error, "cloudplay_operation", None)
+    if isinstance(operation, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,180}", operation):
+        code += "@" + operation
     return code
 
 

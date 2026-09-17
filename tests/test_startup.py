@@ -95,6 +95,36 @@ class ManagerStartupTest(unittest.TestCase):
         self.assertEqual(service.failure_code(ValueError("private credentials")), "ValueError")
         self.assertEqual(service.failure_code(ManagerError("invalid name containing secrets")), "ManagerError")
 
+    def test_dbus_call_retains_error_identity_and_logs_operation_not_arguments(self):
+        error = ManagerError("org.freedesktop.NetworkManager.PermissionDenied")
+        error.args = ("private password contents",)
+        proxy = SimpleNamespace(AddAndActivateConnection2=Mock(side_effect=error))
+        net = network.Network.__new__(network.Network)
+        net.bus = SimpleNamespace(get_object=Mock(return_value=proxy))
+        net.dbus = SimpleNamespace(Interface=lambda obj, _: obj, DBusException=ManagerError)
+        with self.assertRaises(ManagerError) as caught:
+            net.call(network.ROOT, network.NM, "AddAndActivateConnection2",
+                     {"password": "never-log-this-secret"})
+        self.assertIs(caught.exception, error)
+        code = service.failure_code(error)
+        self.assertIn("@org.freedesktop.NetworkManager.AddAndActivateConnection2", code)
+        self.assertIn("PermissionDenied", code)
+        self.assertNotIn("private", code)
+        self.assertNotIn("never-log", code)
+
+    def test_system_bus_connection_error_has_safe_stage_context(self):
+        error = ManagerError("org.freedesktop.DBus.Error.FileNotFound")
+        fake = SimpleNamespace(SystemBus=Mock(side_effect=error), DBusException=ManagerError)
+        with patch.dict(sys.modules, {"dbus": fake}), self.assertRaises(ManagerError):
+            network.Network()
+        self.assertEqual(service.failure_code(error),
+                         "ManagerError:org.freedesktop.DBus.Error.FileNotFound@SystemBus.connect")
+
+    def test_untrusted_operation_text_is_not_logged(self):
+        error = ManagerError()
+        error.cloudplay_operation = "SSID or password\nsecret"
+        self.assertNotIn("@", service.failure_code(error))
+
     def test_connected_ethernet_does_not_call_radio_initialization(self):
         work = ROOT / "build/tests" / str(uuid.uuid4())
         work.mkdir(parents=True)

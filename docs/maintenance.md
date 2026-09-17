@@ -167,6 +167,14 @@ potentially credential-bearing message. Protocol-faithful tests reproduce the
 old failure; separate launcher tests exercise direct GFN, temporary-browser
 cleanup/handoff and failed-child propagation into supervisor backoff.
 
+Diagnostics now also attach the static operation, for example
+`DBusException:org.freedesktop.NetworkManager.AlreadyEnabledOrDisabled@org.freedesktop.NetworkManager.Enable`
+or `...@SystemBus.connect`. The original exception type/identity is preserved
+for specific race handling. No method arguments, settings dictionaries,
+SSIDs, passwords or exception messages are logged. A class-only message on a
+test SD may still be the original service; compare installed hashes with the
+coordinated hotfix manifest before concluding the corrected source failed.
+
 The **black-screen cause remains unconfirmed**. Repeated browser/client exits
 can produce a five-minute supervisor pause after six failures. Look for
 `Cloudplay child exited ...; retry in 300s`, compositor/session exits and
