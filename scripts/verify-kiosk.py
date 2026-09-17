@@ -20,7 +20,9 @@ def main():
                  "raspberrypi-ui-mods", "rpi-connect-lite"}
     assert not names & forbidden, f"Desktop/wizard packages installed: {names & forbidden}"
     required = {"greetd", "labwc", "libpam-systemd", "dbus-user-session",
-                "pipewire", "pipewire-pulse", "wireplumber", "plymouth", "plymouth-themes"}
+                "pipewire", "pipewire-pulse", "wireplumber", "plymouth", "plymouth-themes",
+                "dnsmasq-base", "python3-dbus", "python3-qrcode", "iw", "rfkill",
+                "wpasupplicant", "wireless-regdb"}
     assert required <= names, f"Missing kiosk packages: {required - names}"
     account = pwd.getpwnam("cloudplay")
     assert account.pw_uid == 1000 and account.pw_shell == "/bin/bash"
@@ -47,6 +49,13 @@ def main():
     launcher = Path("/usr/local/bin/cloudplay-start").read_text()
     assert "--kiosk" in launcher and "https://play.geforcenow.com/" in launcher
     assert "--no-sandbox" not in launcher and "--remote-debugging" not in launcher
+    assert "onboarding/client.py" in Path("/usr/local/bin/cloudplay-browser-session").read_text()
+    network_unit = Path("/etc/systemd/system/cloudplay-network.service").read_text()
+    for setting in ("ProtectHome=yes", "ProtectSystem=strict", "NoNewPrivileges=yes",
+                    "StateDirectoryMode=0700"):
+        assert setting in network_unit
+    for unit in ("cloudplay-network.service", "cloudplay-wifi-radio.service"):
+        assert Path("/etc/systemd/system/multi-user.target.wants", unit).is_symlink()
     cmdline = Path("/boot/firmware/cmdline.txt").read_text().split()
     assert {"quiet", "splash", "console=tty3", "vt.global_cursor_default=0"} <= set(cmdline)
     assert "console=tty1" not in cmdline
@@ -69,12 +78,20 @@ def main():
         "/usr/share/plymouth/themes/cloudplay/cloudplay.script",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.plymouth",
         "/boot/firmware/cmdline.txt", "/boot/firmware/config.txt",
+        "/etc/systemd/system/cloudplay-network.service",
+        "/etc/systemd/system/cloudplay-wifi-radio.service",
     ]
+    paths += ["/usr/local/lib/cloudplay/onboarding/" + name for name in
+              ("network.py", "service.py", "client.py", "setup.html", "setup.js", "setup.css")]
+    for path in paths:
+        info = Path(path).stat()
+        assert info.st_uid == 0 and not info.st_mode & 0o022, path
     report = {
         "design": "lite-wayland-kiosk", "account": "cloudplay", "uid": 1000,
         "passwords_locked": True, "ssh_masked": True, "desktop_wizard_absent": True,
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
+        "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "initramfs": initramfs, "boot_validated": False,
         "configuration_sha256": {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
     }

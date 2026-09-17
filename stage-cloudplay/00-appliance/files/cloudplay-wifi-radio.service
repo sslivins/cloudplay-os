@@ -1,0 +1,12 @@
+[Unit]
+Description=Enable appliance Wi-Fi radio without selecting a network
+After=systemd-udevd.service systemd-rfkill.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock wifi
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

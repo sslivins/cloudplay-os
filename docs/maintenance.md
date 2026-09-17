@@ -61,6 +61,65 @@ or that the transition is flicker-free. Physical boot acceptance is mandatory.
 
 ## Network provisioning and recovery
 
+The new `onboarding/` source is a network-only adaptation of Agora phase one.
+Reference revisions inspected read-only:
+
+- `sslivins/agora` `24506aa86c629e87f195c8ab4e62d1079dc4ba9b`:
+  `provision/service.py`, `network.py`, `dns.py`, `app.py`, `display.py`,
+  `launch_oobe.sh`, and `tests/test_oobe_flow.py`.
+- `sslivins/agora-os` `0eec364f2844ed05b7c316140354fb6a02cac970`:
+  `pi-gen-overlay/stage-agora/01-install-agora/00-run.sh`.
+
+Retained patterns: existing Ethernet/Wi-Fi wins; activation is not success
+without an assigned address; DNS redirect and a listening captive portal
+precede AP activation; one radio switches from AP to station; failed setup
+returns to a retry flow; absent Wi-Fi produces Ethernet instructions.
+Do **not** copy Agora's CMS/adoption phase, service teardown, root display
+ownership, trusted APT, SSH policy or fixed HDMI mode. Its open AP and
+password-bearing command arguments/event logs are not used here.
+
+`cloudplay-network.service` runs a small root network helper. NetworkManager
+D-Bus receives credentials directly, never via `nmcli` arguments. A new
+station profile starts in memory and is saved by NetworkManager only after
+successful activation/address assignment. Failure removes only that newly
+created profile, not previously saved networks. A selected regulatory country
+is persisted root-only under `/var/lib/cloudplay-network` and reapplied on boot.
+The radio unblock unit follows Agora's boot pattern; NetworkManager networking
+and wireless are explicitly enabled. No board-name heuristic disables Pi5 Wi-Fi.
+
+The service cannot access `/home` or `/run/user` (`ProtectHome=yes`) and has
+a read-only filesystem except its state and own DNS configuration directory.
+It receives only network/bind capabilities. There is no shell/command endpoint,
+sudo-group grant or shared OS password. Loopback port 8765 serves the local UI.
+Mutation requires the exact Host, same Origin and a per-process token, bounded
+JSON input, supported security settings and an offline idle state. Untrusted
+strings and credentials are not logged or echoed in errors; no CORS access
+is granted. Request concurrency and command waits are bounded.
+
+The optional phone hotspot requires a country selected on the TV, generates
+fresh WPA credentials, and uses an in-memory volatile NM profile whose
+activation is bound to the service's private D-Bus connection. The phone HTTP
+listener binds `10.42.0.1:80` with `SO_BINDTODEVICE` on the actual Wi-Fi device
+and `IP_FREEBIND` so it can listen **before** AP activation. This is intentionally
+not `0.0.0.0`. The DNS drop-in is created first; after submission both listener
+and AP are removed before station activation. Failures recreate phone setup;
+Ethernet recovery ends it. Service exit disconnects the volatile AP, and
+`ExecStopPost` removes only Cloudplay's DNS drop-in. Phone clients cannot read
+the hotspot password from the API; it is displayed only on the local TV.
+
+The normal labwc session launches a temporary sandboxed setup browser only
+when needed. It uses its own process group/runtime profile, with no extension,
+sync or persistent NVIDIA cookies. On readiness it closes only that owned
+group, removes its temporary profile and executes the existing persistent
+GFN launcher. Normal supervisor backoff still applies. No root framebuffer
+renderer competes with labwc, and no CMS/player/Agora process is controlled.
+
+Source tests cover state gates, real local HTTP endpoints, Host/Origin/token
+rejection, secret handling, AP lifecycle ordering/cleanup, typed D-Bus settings,
+DHCP checks and profile persistence/deletion boundaries. These do not replace
+actual NetworkManager/Wi-Fi/captive-portal or boot acceptance. The next image
+and final splash changes remain gated on the user's artwork-preview approval.
+
 Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
 from `file:///boot/firmware` and NetworkManager via netplan. Default `user-data`
 contains `users: []` and disables SSH password login. Default `network-config`
@@ -70,7 +129,7 @@ legacy `userconf` route is intentionally removed. Arbitrary replacement
 user-data is privileged physical provisioning, not untrusted kiosk input.
 
 There is no local admin password, general desktop, terminal greeter or settings
-application. Offline media maintenance or a separately provisioned trusted
+application beyond network-only onboarding. Offline media maintenance or a separately provisioned trusted
 admin method is required. Protect boot configuration and browser profiles.
 For reflash, boot another root device and have the operator identify/unmount
 the target. Never overwrite mounted/running root storage.

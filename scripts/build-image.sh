@@ -20,6 +20,9 @@ cp -a stage-cloudplay build/pi-gen/
 # Lite otherwise installs userconf-pi again and enables the OS account wizard.
 rm -rf build/pi-gen/export-image/01-user-rename
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
+mkdir -p build/pi-gen/cloudplay-inputs/onboarding
+cp onboarding/{network.py,service.py,client.py,setup.html,setup.js,setup.css} \
+    build/pi-gen/cloudplay-inputs/onboarding/
 cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py \
     scripts/supervise.py scripts/verify-kiosk.py build/pi-gen/cloudplay-inputs/
 python3 scripts/artifacts.py stage --destination build/pi-gen/cloudplay-inputs/artifacts

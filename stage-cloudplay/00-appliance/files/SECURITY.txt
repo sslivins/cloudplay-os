@@ -20,8 +20,13 @@ administrator with an independently reviewed commit and archive digest.
 There is no automatic browser/extension updater, signed OTA or verified boot.
 
 Network provisioning files on the boot partition are privileged configuration.
-Use Ethernet DHCP or the documented first-boot network-config. The supported
-image has no terminal greeter, Wi-Fi setup wizard, recovery partition or admin
+Ethernet DHCP, network-only onboarding and first-boot network-config are
+supported by the source. The setup browser has its own ephemeral profile and
+normal sandbox. The root network helper cannot read user homes and accepts
+only narrow validated network operations; it never logs network passwords.
+An optional phone hotspot uses fresh WPA credentials displayed locally; its
+portal is AP-interface-only and closes before joining the home LAN.
+There is no OS account wizard, terminal greeter, recovery partition or admin
 password. Recovery is offline media editing or reflash from a separate system;
 never overwrite a running root filesystem. Profiles contain session credentials.
 

@@ -52,7 +52,13 @@ tier, game and region. Redact credentials, session tokens and public IPs.
 - Test Ethernet connected during setup, delayed DHCP, dropped connectivity
   and power interruption during configuration. Network setup must not require
   a shared administrator password or an unsandboxed/root browser.
-- Verify the local setup endpoint is not reachable from another LAN machine;
+- Verify the setup endpoint is not reachable from another LAN machine;
+  the optional phone portal is accessible only over the temporary private AP,
+  with a newly generated password shown locally. Test QR joining and Apple,
+  Android and Windows captive detection. The listener must close before the
+  radio joins the home network, including error/stop paths.
+- Verify wrong-origin/missing-token mutations are rejected, both before and
+  after service restart. The old TV token must recover on the next submission.
   NVIDIA cookies are not exposed to the setup service, and Wi-Fi credentials
   do not appear in logs, URLs, command-line arguments or saved browser forms.
 - Repeat with first-boot `network-config` Wi-Fi provisioning and correct

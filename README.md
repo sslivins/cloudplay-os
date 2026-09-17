@@ -15,10 +15,11 @@ test. No claim of interactive GFN gameplay, 4K decoding or HDR output is made.
 **Next revision is awaiting splash-preview approval.** The current built
 artifact below predates the requested Agora-style Wi-Fi onboarding. Its text
 splash is an implementation placeholder, not approved final artwork. The next
-revision must retain a minimal appliance network-setup flow when needed,
+revision retains a minimal appliance network-setup flow when needed,
 without restoring the Raspberry Pi desktop or OS account wizard. Agora's
-existing implementation is the reference; this flow is not implemented here
-yet. No final-artwork update or new image build should precede preview approval.
+existing network phase is the reference. The adapted flow is now implemented
+and unit-tested in source, **not yet image-built or hardware-validated**.
+No final-artwork update or new image build should precede preview approval.
 
 ## Boot and runtime
 
@@ -57,18 +58,52 @@ Actual display timing, early-boot flicker, first-boot resize/reboot and handoff
 to Chromium must be checked on hardware. A failed boot can still expose a
 kernel/emergency diagnostic; quiet flags are not a security boundary.
 
-## Networking and first boot
+## Appliance network onboarding — next image pending
 
-The instructions in this section describe the **currently built artifact**.
-The requested next revision adds on-device appliance Wi-Fi onboarding; manual
-boot-partition provisioning must not be its only Wi-Fi setup path.
+**Ethernet DHCP is the default.** A connected Ethernet or saved Wi-Fi interface
+with an assigned address skips setup and goes to GeForce NOW. On an offline
+boot the source now provides a minimal network page, not a desktop or account
+wizard. It allows saved networks time to reconnect before accepting changes.
+NVIDIA remains the only account login.
 
-**Ethernet DHCP is the default.** The only normal on-screen login should be
-NVIDIA's own web flow. Connect a supported keyboard/controller/mouse as needed.
+- Choose the **actual country** where the device is used, select a scanned
+  network (or enter a hidden SSID), choose security and enter its password.
+  WPA/WPA2 Personal, WPA3 Personal, Open and OWE are supported by the source;
+  enterprise/802.1X and legacy WEP need separate administrator provisioning.
+- Optionally choose **Use a phone to set up Wi-Fi** on the TV. This starts a
+  temporary, uniquely password-protected `Cloudplay-…` hotspot. Join using the
+  TV's QR code/password, then open its captive portal or `http://10.42.0.1`.
+  No shared/default hotspot password is shipped.
+- One radio cannot stay in hotspot mode while joining the home network.
+  The portal sends an acknowledgement before its hotspot disconnects.
+  On failure, the TV reports it and offers a new hotspot code for retry.
+  Phone scanning uses the results cached before AP mode; manual SSID entry
+  remains available.
+- Successful DHCP precedes saving the new NetworkManager profile and opening
+  GeForce NOW. Failed attempts do not delete older saved networks. Ethernet
+  connected during setup ends the hotspot and bypasses the wizard.
+- With no Wi-Fi interface, show Ethernet instructions and keep checking for
+  an address. No endless Wi-Fi scan or false password error.
 
 Standard Raspberry Pi 5 has onboard dual-band Wi-Fi. Compute Module 5 wireless
 is optional; **Lite means no eMMC**, not no Wi-Fi. Identify the actual module
 and available interfaces rather than inferring wireless support from “Lite.”
+
+The setup browser is a separate, temporary **sandboxed nonroot** Chromium
+profile under the user runtime directory. It is closed and removed before
+launching the persistent NVIDIA profile. The narrowly scoped network service
+uses NetworkManager's D-Bus API, not passwords in process arguments, and cannot
+read home directories. Its phone listener is restricted to the AP's address
+**and wireless interface** and is closed before that interface joins a LAN.
+It is not a LAN administration server. Network secrets are not logged.
+
+This adapts Agora's Ethernet-first/AP/captive-portal/single-radio/retry pattern
+without its CMS adoption, fleet services or framebuffer ownership. See
+[architecture and provenance](docs/maintenance.md#network-provisioning-and-recovery).
+The currently downloadable kiosk artifact predates this implementation.
+Real Wi-Fi, phone captive detection and boot integration remain untested.
+
+### Optional boot-partition provisioning
 
 Use Raspberry Pi Imager's **custom-image** option, but **skip OS customization**
 that creates/renames accounts or enables SSH. The kiosk needs the fixed account,
@@ -102,10 +137,12 @@ network file is first-boot provisioning, not a live settings UI. Treat it and
 account flow and automatic SSH customization are **not supported**. SSH and
 local getty services are masked by default. Do not ship secrets in this repo.
 
-If offline, Chromium may display its network-error page; the session remains
-running. Restore Ethernet/network provisioning and reload. No internet probe
-or OS onboarding screen gates launch. First-boot network provisioning and
-offline recovery still require physical acceptance.
+An assigned address is not proof of internet access. No external internet probe
+or CMS gates launch; upstream captive networks or outages can still leave
+GeForce NOW showing a network error. The setup flow runs when the kiosk launcher
+starts; it does not forcibly interrupt an active game when connectivity drops.
+Restore the network and reload, or restart the appliance to revisit setup.
+Physical first-boot and recovery acceptance remains required.
 
 ## Recovery and storage safety
 

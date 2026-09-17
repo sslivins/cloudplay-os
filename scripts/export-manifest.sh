@@ -11,6 +11,9 @@ if ! mountpoint -q "${ROOTFS_DIR}/dev/shm"; then
     mount --bind /dev/shm "${ROOTFS_DIR}/dev/shm"
 fi
 on_chroot <<'CHROOT'
+python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/onboarding"); import network, service, dbus, qrcode.image.svg'
+systemd-analyze verify --man=no /etc/systemd/system/cloudplay-network.service \
+    /etc/systemd/system/cloudplay-wifi-radio.service
 runuser -u cloudplay -- test -w /dev/shm
 install -d -m 700 -o cloudplay -g cloudplay /run/cloudplay-config-check
 runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \

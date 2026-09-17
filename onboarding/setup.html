@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cloudplay OS — Network setup</title>
+  <link rel="stylesheet" href="/setup.css">
+  <script src="/setup.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Cloudplay OS</h1>
+    <h2>Connect to your network</h2>
+    <p id="status" role="status">Checking saved networks…</p>
+    <p id="error" role="alert"></p>
+    <section id="wireless" hidden>
+      <form id="wifi" autocomplete="off">
+        <label>Country where this device is used
+          <select id="country" required><option value="">Choose country</option></select>
+        </label>
+        <label>Available networks
+          <select id="networks"><option value="">Enter a network below</option></select>
+        </label>
+        <label>Network name (SSID)<input id="ssid" required maxlength="32" autocomplete="off"></label>
+        <label>Security
+          <select id="security">
+            <option value="wpa-psk">WPA / WPA2 Personal</option>
+            <option value="sae">WPA3 Personal</option>
+            <option value="open">Open network</option>
+            <option value="owe">Enhanced Open (OWE)</option>
+          </select>
+        </label>
+        <label>Password<input id="password" type="password" maxlength="64" autocomplete="new-password"></label>
+        <label class="check"><input id="hidden" type="checkbox"> Hidden network</label>
+        <button id="connect" type="submit">Connect</button>
+      </form>
+      <p>Or connect Ethernet. No OS account or administrator password is needed.</p>
+      <section id="phone-tools" hidden>
+        <button id="phone" type="button">Use a phone to set up Wi-Fi</button>
+        <p>Choose your country first. A private setup hotspot will temporarily use this Wi-Fi radio.</p>
+        <div id="phone-details" hidden>
+          <img id="qr" alt="Scan to join this device’s private Wi-Fi setup hotspot">
+          <p>Join <strong id="phone-ssid"></strong></p>
+          <p>Hotspot password: <strong id="phone-password"></strong></p>
+          <p>Then open <strong>http://10.42.0.1</strong> on your phone.</p>
+          <p>The hotspot disconnects while connecting to your network. If it fails,
+            use the new code shown here to reconnect and retry.</p>
+        </div>
+      </section>
+    </section>
+    <p id="wired" hidden>No Wi-Fi adapter detected. Connect an Ethernet cable;
+      the appliance will continue automatically when it receives an address.</p>
+    <p class="note">Only network setup is performed here. NVIDIA sign-in follows in GeForce NOW.</p>
+  </main>
+</body>
+</html>

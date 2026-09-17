@@ -13,3 +13,10 @@ fonts-liberation
 plymouth
 plymouth-themes
 network-manager
+dnsmasq-base
+python3-dbus
+python3-qrcode
+iw
+rfkill
+wpasupplicant
+wireless-regdb
