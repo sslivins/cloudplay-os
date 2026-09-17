@@ -159,6 +159,40 @@ snapshot-pinned: this is auditable, not fully reproducible.
 browser.** Read [maintenance/security](docs/maintenance.md) and the full
 [physical acceptance matrix](docs/hardware-acceptance.md).
 
+## Built kiosk preview
+
+[ARM64 build 35164399916](https://github.com/sslivins/cloudplay-os/actions/runs/35164399916)
+completed successfully from clean source
+`9f6170a5717df90ada967a064c514bdfdfe0e608`. Download its
+`cloudplay-os-kiosk-preview-9f6170a5717df90ada967a064c514bdfdfe0e608`
+artifact (ID `10473999322`; expires **2026-09-24 00:02 UTC**).
+This is an unsigned preview artifact, not a signed/public OS release.
+
+- Image: `image_2026-09-16-cloudplay-os-kiosk-preview.img.xz`
+- Size: **961,407,616 bytes** compressed; **4,261,412,864 bytes** (4,064 MiB)
+  uncompressed.
+- SHA256:
+  `8b6ca858f4007489e93ee505c60f29eab0a1313c944e86344e24ed34b14b2aa7`
+
+The downloaded image passed SHA256 and xz integrity checks. Independent,
+read-only FAT/ext4 inspection verified the locked UID1000 account, masked
+SSH/gettys, absence of desktop/wizard packages, greetd/PAM/logind wiring,
+configuration/extension hashes, four held browser packages, and exact packaged
+Chromium executable SHA256/BuildID. Both **firmware-loaded** `initramfs8` and
+`initramfs_2712` contain the selected Cloudplay theme, script and text plugins,
+fonts, DRM renderer and VC4 module.
+
+All 32 recipe tests passed, and the actual image build exercised labwc as
+nonroot with a headless backend. Real builds caught and fixed pi-gen's
+suppressed initramfs updates and missing `/dev/shm` submount in the build chroot;
+neither check was bypassed. Necessary browser-window click focus is retained
+without restoring desktop/menu shortcuts.
+
+**Not yet flashed or boot-tested.** Splash appearance/handoff, NVIDIA login,
+input/audio, networking and session persistence still need the physical
+acceptance matrix. A passing headless compositor check does not validate DRM
+output or this appliance's real boot sequence.
+
 ## Historical desktop artifacts — not the kiosk design
 
 Preserved for traceability, not recommended for the requested appliance UX:
