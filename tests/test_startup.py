@@ -209,14 +209,14 @@ class BrowserHandoffTest(unittest.TestCase):
                 error = result.code
         return popen, kill, execute, error
 
-    def test_ethernet_fast_path_executes_gfn_without_localhost_browser(self):
+    def test_ethernet_fast_path_executes_home_without_localhost_browser(self):
         popen, kill, execute, error = self.run_client([], mode="online")
         self.assertIsNone(error)
         popen.assert_not_called()
         kill.assert_not_called()
         execute.assert_called_once_with("/usr/local/bin/cloudplay-start", ["cloudplay-start"])
 
-    def test_setup_ready_terminates_only_owned_browser_then_executes_gfn(self):
+    def test_setup_ready_terminates_only_owned_browser_then_executes_home(self):
         popen, kill, execute, error = self.run_client([True])
         self.assertIsNone(error)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])

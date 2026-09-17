@@ -96,9 +96,11 @@ def main():
     required = {"greetd", "openssh-server", "openssl", "sudo", "labwc", "swaybg", "libpam-systemd", "dbus-user-session",
                 "pipewire", "pipewire-pulse", "wireplumber", "plymouth", "plymouth-themes",
                 "dnsmasq-base", "python3-dbus", "python3-qrcode", "iw", "rfkill",
-                "wpasupplicant", "wireless-regdb"}
+                "wpasupplicant", "wireless-regdb", "python3-gi", "gir1.2-gtk-3.0"}
     assert required <= names, f"Missing kiosk packages: {required - names}"
     boot_order = verify_boot_order()
+    home_smoke = json.loads(Path("/usr/local/share/cloudplay/home-smoke.json").read_text())
+    assert home_smoke == {"passed": True}, home_smoke
     account = pwd.getpwnam("cloudplay")
     assert account.pw_uid == 1000 and account.pw_shell == "/bin/bash"
     home_metadata = home_directory_metadata(Path(account.pw_dir), account.pw_uid, account.pw_gid)
@@ -106,7 +108,8 @@ def main():
     assert all(shadow[name].startswith(("!", "*")) for name in ("root", "cloudplay"))
     assert "rpi-first-boot-wizard" not in shadow
     groups = subprocess.check_output(["id", "-nG", "cloudplay"], text=True).split()
-    assert not set(groups) & {"sudo", "adm", "disk"}
+    assert not set(groups) & {"sudo", "adm", "disk", "input"}
+    assert "cloudplay-gamepad" in groups
     config = tomllib.loads(Path("/etc/greetd/config.toml").read_text())
     for name in ("initial_session", "default_session"):
         assert config[name]["user"] == "cloudplay"
@@ -149,11 +152,27 @@ def main():
     for service in ("ssh.socket", "userconfig.service", "getty@.service", "serial-getty@.service"):
         assert Path("/etc/systemd/system", service).is_symlink()
         assert str(Path("/etc/systemd/system", service).resolve()) == "/dev/null"
-    ElementTree.parse("/etc/cloudplay/labwc/rc.xml")
+    labwc = ElementTree.parse("/etc/cloudplay/labwc/rc.xml")
+    home_binding = labwc.find("./keyboard/keybind[@key='C-A-Home']")
+    assert home_binding is not None and home_binding.get("overrideInhibition") == "yes"
+    assert home_binding.get("onRelease") == "yes"
+    binding = labwc.find("./keyboard/keybind[@key='C-A-Home']/action")
+    assert binding is not None and binding.attrib == {
+        "name": "Execute", "command": "/usr/local/bin/cloudplay-home"}
     assert "lxsession" not in Path("/etc/cloudplay/labwc/autostart").read_text()
     launcher = Path("/usr/local/bin/cloudplay-start").read_text()
+    assert "launcher/main.py" in launcher
+    launcher = Path("/usr/local/lib/cloudplay/launcher/host.py").read_text()
     assert "--kiosk" in launcher and "https://play.geforcenow.com/" in launcher
+    assert "https://www.xbox.com/play" in launcher and "chromium-profile" in launcher
+    assert "KillMode=control-group" in launcher and "TimeoutStopSec=2s" in launcher
     assert "--no-sandbox" not in launcher and "--remote-debugging" not in launcher
+    gamepad_rule = Path("/etc/udev/rules.d/71-cloudplay-gamepad.rules").read_text()
+    for condition in ('ENV{ID_INPUT_JOYSTICK}=="1"', 'ENV{ID_INPUT_KEYBOARD}!="1"',
+                      'GROUP="cloudplay-gamepad"', 'MODE="0660"', 'KERNEL=="js*"'):
+        assert condition in gamepad_rule
+    subprocess.run(["udevadm", "verify", "/etc/udev/rules.d/71-cloudplay-gamepad.rules"],
+                   check=True, capture_output=True, text=True)
     assert "onboarding/client.py" in Path("/usr/local/bin/cloudplay-browser-session").read_text()
     network_unit = Path("/etc/systemd/system/cloudplay-network.service").read_text()
     for setting in ("ProtectHome=yes", "ProtectSystem=strict", "NoNewPrivileges=yes",
@@ -205,6 +224,10 @@ def main():
         "/etc/cloudplay/labwc/rc.xml", "/etc/cloudplay/labwc/autostart",
         "/usr/local/bin/cloudplay-start", "/usr/local/bin/cloudplay-session",
         "/usr/local/bin/cloudplay-browser-session", "/usr/local/lib/cloudplay/supervise.py",
+        "/usr/local/bin/cloudplay-home", "/etc/udev/rules.d/71-cloudplay-gamepad.rules",
+        "/usr/local/share/cloudplay/home-smoke.json",
+        "/usr/local/share/cloudplay/SECURITY.txt",
+        "/opt/cloudplay-build-inputs/check-launcher.py",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.script",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.plymouth",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.png",
@@ -220,6 +243,8 @@ def main():
     paths += ["/usr/local/lib/cloudplay/onboarding/" + name for name in
               ("network.py", "service.py", "client.py", "readiness.py", "boot.py",
                "setup.html", "setup.js", "setup.css")]
+    paths += ["/usr/local/lib/cloudplay/launcher/" + name for name in
+              ("main.py", "host.py", "gamepad.py")]
     paths += [str(path) for path in frames]
     if development_ssh:
         paths.append("/etc/sudoers.d/90-cloudplay-development")
@@ -239,6 +264,10 @@ def main():
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
+        "home": "native GTK Wayland; owner-only Unix control; fixed per-service user cgroup",
+        "home_ui_smoke": home_smoke,
+        "services": {"gfn": "existing persistent profile", "xbox": "separate profile; unvalidated on Pi"},
+        "controller": "up to four classified non-keyboard gamepads; Select+Start hold 2s",
         "startup_gate": "bounded DHCP wait before Plymouth releases DRM; helper failure does not force setup",
         "boot_order": boot_order,
         "journal_effective_settings": journal,

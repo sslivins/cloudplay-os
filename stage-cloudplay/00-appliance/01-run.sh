@@ -9,15 +9,20 @@ install -d "${ROOTFS_DIR}/usr/local/lib/cloudplay" "${ROOTFS_DIR}/usr/local/bin"
     "${ROOTFS_DIR}/etc/systemd/logind.conf.d" \
     "${ROOTFS_DIR}/etc/systemd/journald.conf.d" \
     "${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d" \
+    "${ROOTFS_DIR}/etc/udev/rules.d" \
     "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay"
 cp -a "${inputs}/." "${ROOTFS_DIR}/opt/cloudplay-build-inputs/"
 cp -a "${inputs}/onboarding" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
+cp -a "${inputs}/launcher" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
+find "${ROOTFS_DIR}/usr/local/lib/cloudplay/launcher" -type d -exec chmod 755 {} +
+find "${ROOTFS_DIR}/usr/local/lib/cloudplay/launcher" -type f -exec chmod 644 {} +
+install -m 644 files/71-cloudplay-gamepad.rules "${ROOTFS_DIR}/etc/udev/rules.d/"
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type d -exec chmod 755 {} +
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type f -exec chmod 644 {} +
 install -m 644 files/cloudplay-network.service files/cloudplay-wifi-radio.service \
     files/cloudplay-startup.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/cloudplay-diagnostics.conf "${ROOTFS_DIR}/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf"
-install -m 755 files/cloudplay-start files/cloudplay-session files/cloudplay-browser-session "${ROOTFS_DIR}/usr/local/bin/"
+install -m 755 files/cloudplay-start files/cloudplay-home files/cloudplay-session files/cloudplay-browser-session "${ROOTFS_DIR}/usr/local/bin/"
 install -m 755 files/cloudplay-development-ssh "${ROOTFS_DIR}/usr/local/bin/"
 case "${CLOUDPLAY_DEVELOPMENT_SSH:-1}" in 0|1) ;; *) exit 1 ;; esac
 printf '%s\n' "${CLOUDPLAY_DEVELOPMENT_SSH:-1}" > "${ROOTFS_DIR}/etc/cloudplay/development-ssh"
@@ -41,7 +46,8 @@ set -eu
 apt-get purge -y userconf-pi rpi-connect-lite
 apt-get install --no-install-recommends --allow-downgrades -y /opt/cloudplay-build-inputs/artifacts/*.deb
 apt-mark hold chromium chromium-common chromium-sandbox chromium-l10n
-usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay
+groupadd --system --force cloudplay-gamepad
+usermod --password '*' --shell /bin/bash --groups audio,video,render,cloudplay-gamepad cloudplay
 usermod --password '*' root
 install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay \
     /home/cloudplay/.config /home/cloudplay/.config/cloudplay

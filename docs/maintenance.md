@@ -26,18 +26,75 @@ user session while its compositor/browser supervisors handle restarts.
 `dbus-run-session` and minimal labwc. The compositor's session client imports
 the Wayland environment into D-Bus/systemd and starts the user audio services.
 Neither compositor nor Chromium runs as root. The fixed account has audio,
-video, render and input access but no disk/admin/sudo access.
+video and render access but no disk/admin/sudo or broad `input` group access.
+logind supplies compositor seat access; a separate `cloudplay-gamepad` group
+can access only udev-classified, non-keyboard gamepads: event nodes retain
+force-feedback write access for Chromium; joydev nodes are read-only.
 
 Both initial and fallback commands log through `systemd-cat`. The compositor's
-root-owned config supplies explicit no-op key/mouse bindings: labwc otherwise
+root-owned config supplies explicit key/mouse bindings: labwc otherwise
 loads terminal/menu defaults when no binding entries exist. It does not invoke
 stock desktop autostart, panels, wallpaper managers or settings tools.
 
 The child supervisors only signal their own newly created process groups.
 Short-lived failures back off 2/4/8/16/32 seconds, then pause five minutes after
 six failures; runs lasting at least two minutes reset the sequence. This also
-applies to intentional browser closes. No immediate crash-respawn storm or
-automatic sign-out/profile deletion is performed.
+applies to Home/compositor failures. A closed service browser returns to Home
+without automatically reconnecting the stream or deleting sign-in data.
+
+## Home and service lifecycle
+
+After network onboarding, `cloudplay-start` runs `launcher/main.py`, a native
+GTK3 Wayland fullscreen menu. GTK's Python bindings are runtime dependencies,
+not a desktop shell. GFN keeps `/home/cloudplay/.config/cloudplay/chromium-profile`;
+Xbox uses the sibling `xbox-profile`. Only GFN loads the compatibility extension.
+The two HTTPS entry points are fixed in `launcher/host.py`; callers cannot supply
+a URL, executable, arguments, profile path or shell command.
+
+Each service runs in the transient **user** unit `cloudplay-stream.service`,
+created with `systemd-run --user`, `ExitType=cgroup`, `KillMode=control-group`,
+and a two-second graceful-stop deadline followed by SIGKILL. This tracks even
+renderers which outlive or detach from Chromium's original process. Home and
+Reload synchronously stop the unit; Home is not displayed as successful until
+the unit is inactive. A replacement Home process first stops any surviving
+owned unit, so a launcher crash cannot leave a hidden stream after recovery.
+Service failure returns to Home, not a browser restart loop. Browser output
+is discarded to avoid collecting service URLs, authentication state or tokens.
+
+labwc binds Ctrl+Alt+Home on release to `cloudplay-home`, with
+`overrideInhibition="yes"` so a service's keyboard-shortcut lock cannot suppress
+the recovery binding. The helper sends only
+`home` to a mode0600 Unix sequenced-packet socket inside the user's mode0700
+runtime directory. The listener also checks `SO_PEERCRED`, bounds packet size,
+client waits and work per tick. It cannot launch services directly: the command
+opens the native Stay/Reload/Home confirmation over the service, independently
+of Chromium, pointer lock, page JavaScript or error pages. Stay is the default.
+There is **no HTTP launcher/control endpoint** and no browser-visible token:
+web origins cannot access this IPC, so it adds no CORS/CSRF surface. The root
+network helper remains networking-only on 8765, with its existing protections.
+Same-user native code is trusted; this is not a boundary against a compromised
+cloudplay account or an escaped Chromium sandbox.
+
+`launcher/gamepad.py` opens at most four udev-selected gamepads read-only,
+checks evdev capabilities again, rejects keyboard interfaces and reads at most
+64 events per device per 50ms tick. It never opens keyboard nodes or grabs the
+seat. Devices rescan every three seconds; disconnect, event loss, permission
+failure and missing controllers leave keyboard navigation available. D-pad
+and A/B navigate Home; Select/Back + Start/Menu held for two seconds opens
+confirmation. Holds fire once per release, queued-event saturation cannot
+infer a hold, and navigation must return neutral when the menu opens.
+The combo can also reach the running game; this is not a pause mechanism.
+
+Export verifies installed dependencies, launcher/control/rule hashes, profile
+ownership, group restrictions and compositor binding. A headless labwc run
+exercises the real GTK menu with synthetic services (never provider sign-in);
+an explicit success record is required even if labwc exits zero after a failed
+session client. `tests/test_launcher.py` covers IPC, lifecycle and input logic.
+On Linux, `CLOUDPLAY_SYSTEMD_TEST=1 python3 -m unittest discover -s tests -p
+'test_launcher.py'` additionally tests real user-cgroup cleanup with a uniquely
+named synthetic unit. This does not prove Pi seat focus, controller mappings,
+login persistence with providers or gameplay. Both service flows require the
+hardware acceptance checklist; Xbox remains unvalidated on Pi.
 
 ## Splash and initramfs
 
@@ -131,8 +188,8 @@ the hotspot password from the API; it is displayed only on the local TV.
 The normal labwc session launches a temporary sandboxed setup browser only
 when needed. It uses its own process group/runtime profile, with no extension,
 sync or persistent NVIDIA cookies. On readiness it closes only that owned
-group, removes its temporary profile and executes the existing persistent
-GFN launcher. Normal supervisor backoff still applies. No root framebuffer
+group, removes its temporary profile and executes Cloudplay Home.
+Normal supervisor backoff still applies. No root framebuffer
 renderer competes with labwc, and no CMS/player/Agora process is controlled.
 
 Source tests cover state gates, real local HTTP endpoints, Host/Origin/token
@@ -254,9 +311,9 @@ read-only `Network.snapshot()` child probes real address readiness with a
 two-second **whole-process** timeout, including D-Bus connection/introspection.
 It never calls `Enable`, `Set`, scan or activation methods. A functioning
 confirmed-offline helper may request OOBE after the grace period; unknown/error
-states fall back to GFN instead of a dead localhost page. If both actual
-networking and setup are broken, that fallback can show GFN's offline page,
-not pretend connectivity succeeded. The new `cloudplay-startup` journal
+states fall back to Home instead of a dead localhost page. This does not
+pretend connectivity succeeded: a selected service can still show its offline
+page, from which the host Home shortcut remains available. The `cloudplay-startup` journal
 identifier records safe boot phases; it does not log addresses or credentials.
 
 UX validation includes Windows/Linux regressions, actual

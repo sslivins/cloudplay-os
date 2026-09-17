@@ -20,6 +20,8 @@ network-manager
 dnsmasq-base
 python3-dbus
 python3-qrcode
+python3-gi
+gir1.2-gtk-3.0
 iw
 rfkill
 wpasupplicant

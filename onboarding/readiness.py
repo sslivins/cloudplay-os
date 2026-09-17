@@ -83,9 +83,9 @@ def wait_for_mode(stopping, use_cache=True, progress=lambda _: None):
             if mode == "setup":
                 progress("Wi-Fi setup required — Ethernet also works")
             elif (state and state["connected"]) or (network and network["connected"]):
-                progress("Network connected — opening GeForce NOW")
+                progress("Network connected — opening Cloudplay Home")
             else:
-                progress("Opening GeForce NOW")
+                progress("Opening Cloudplay Home")
             return mode
         stopping.wait(0.5)
     return None

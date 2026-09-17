@@ -5,6 +5,7 @@
     <reuseOutputMode>yes</reuseOutputMode>
   </core>
   <keyboard>
+    <keybind key="C-A-Home" onRelease="yes" overrideInhibition="yes"><action name="Execute" command="/usr/local/bin/cloudplay-home"/></keybind>
     <keybind key="W-Return"><action name="None"/></keybind>
   </keyboard>
   <mouse>

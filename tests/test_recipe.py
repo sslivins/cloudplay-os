@@ -236,7 +236,7 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertIn("rm -rf build/pi-gen/export-image/01-user-rename", build)
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         self.assertIn("apt-get purge -y userconf-pi rpi-connect-lite", stage)
-        self.assertIn("usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay", stage)
+        self.assertIn("usermod --password '*' --shell /bin/bash --groups audio,video,render,cloudplay-gamepad cloudplay", stage)
         self.assertNotIn("do_boot_behaviour B4", stage)
         self.assertIn("systemctl mask ssh.service", stage)
         self.assertIn("export CLOUDPLAY_DEVELOPMENT_SSH=1", config)
@@ -303,7 +303,9 @@ class RecipeSafetyTest(unittest.TestCase):
             self.assertFalse(verifier.development_password_matches(stored))
 
     def test_launcher_security(self):
-        launcher = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-start").read_text()
+        wrapper = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-start").read_text()
+        self.assertIn("launcher/main.py", wrapper)
+        launcher = wrapper + (ROOT / "launcher/host.py").read_text()
         for forbidden in ("--no-sandbox", "--disable-setuid-sandbox", "--remote-debugging",
                           "--force-color-profile", "--ignore-certificate-errors", "sudo ",
                           "--window-size", "--force-device-scale-factor", "--disable-hdr"):
@@ -341,7 +343,12 @@ class RecipeSafetyTest(unittest.TestCase):
         for binding in client:
             self.assertEqual([action.get("name") for action in binding], ["Focus", "Raise"])
         self.assertFalse(xml.findall(".//default"))
-        self.assertFalse(xml.findall(".//action[@name='Execute']"))
+        execute = xml.findall(".//action[@name='Execute']")
+        self.assertEqual(len(execute), 1)
+        self.assertEqual(execute[0].get("command"), "/usr/local/bin/cloudplay-home")
+        home_binding = xml.find("./keyboard/keybind[@key='C-A-Home']")
+        self.assertEqual(home_binding.get("overrideInhibition"), "yes")
+        self.assertEqual(home_binding.get("onRelease"), "yes")
         packages = (ROOT / "stage-cloudplay/00-appliance/00-packages-nr").read_text().split()
         self.assertTrue({"greetd", "labwc", "libpam-systemd", "pipewire", "plymouth-themes"} <= set(packages))
         self.assertFalse({"lightdm", "piwiz", "rpd-wayland-core", "zenity"} & set(packages))

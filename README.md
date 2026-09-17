@@ -1,16 +1,22 @@
 # Cloudplay OS
 
-Cloudplay OS turns a Raspberry Pi into a dedicated **GeForce NOW** terminal.
-It boots into full-screen Chromium, with a branded startup screen and Wi-Fi
-setup when needed. There is no desktop or operating-system account wizard.
+Cloudplay OS turns a Raspberry Pi into a cloud-gaming appliance, with a branded
+startup screen and Wi-Fi setup when needed. Services open in full-screen
+Chromium; there is no desktop or operating-system account wizard.
+
+**Beta 1 boots directly to GeForce NOW.** Current source builds add
+**Cloudplay Home**, a controller-friendly menu for **GeForce NOW** and
+**Xbox Cloud Gaming**, plus return-to-Home controls. These additions are not
+included in beta 1 and still require Pi hardware acceptance. Xbox is an
+**unvalidated Pi entry point**, not a claim of working sign-in or gameplay.
 
 It uses [Chromium with Raspberry Pi HEVC support](https://github.com/sslivins/chromium-rpi-hevc)
 and the [GeForce NOW compatibility extension](https://github.com/sslivins/gfn-pi-compat).
 The browser runs as an unprivileged user with its normal sandbox.
 
-**Development preview:** [download the current preview](https://github.com/sslivins/cloudplay-os/actions/runs/35182932978).
-GitHub sign-in may be required to download the artifact. There is no stable
-release yet; 4K streaming and HDR display output are not yet validated.
+**Development beta:** [download beta 1](https://github.com/sslivins/cloudplay-os/releases/tag/v0.1.0-beta.1).
+There is no stable release yet; 4K streaming and HDR display output are not
+yet validated. See the release notes for known limitations.
 
 ## What you need
 
@@ -25,18 +31,34 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
 
 ## Getting started
 
-1. Open the preview build linked above and download its
-   `cloudplay-os-kiosk-preview-...` image artifact, not the build log.
-   Artifacts are short-lived; if the download has expired, build from source below.
-2. Extract the workflow artifact and verify the image against its `SHA256SUMS`.
+1. Open the beta release linked above and download its `.img.xz` and `SHA256SUMS`.
+2. Verify the image against `SHA256SUMS`.
    In Raspberry Pi Imager, choose **Use custom** and select the `.img.xz` file.
 3. Select the intended card and flash it. **Flashing erases that card.** Never
    overwrite storage that the flashing machine is currently booted from.
    Skip Imager's account and SSH customization; Cloudplay provides its own.
 4. Insert the card, connect the display and input devices, and power on.
    Ethernet is the simplest first-boot connection.
-5. With networking available, Cloudplay opens GeForce NOW directly. Sign in
-   to NVIDIA and choose a game.
+5. With networking available, beta 1 opens GeForce NOW directly. Sign in to
+   NVIDIA and choose a game. Keep a keyboard and mouse available for sign-in.
+
+### Cloudplay Home (source builds)
+
+Choose a service using the D-pad and A, or keyboard arrows/Tab and Enter.
+Keep a keyboard and mouse available for sign-in and unsupported controllers.
+The following controls are not present in the beta 1 image.
+
+From any service page—including browser error pages—press **Ctrl+Alt+Home**
+(then release), or hold **Select/Back + Start/Menu together for two seconds**.
+A native confirmation offers **Stay in service**, **Reload service**, and
+**Return Home**; Stay is selected first. B or Escape cancels.
+
+Returning Home **stops the entire streaming browser**, not just its visible tab.
+Reload also closes and reopens the service, so either action may end your game.
+Your sign-in data is retained: the existing NVIDIA profile is preserved and
+Xbox uses a separate persistent profile. Controller support requires a standard
+gamepad with D-pad, A/B and Select/Start; unsupported or unavailable controllers
+do not disable keyboard/mouse navigation.
 
 ### Network setup
 
@@ -75,7 +97,7 @@ For logs, access controls and recovery, see [maintenance](docs/maintenance.md).
   [hardware acceptance checklist](docs/hardware-acceptance.md).
 - 4K and HDR are development targets, not advertised working features.
   Decoding HDR-encoded video does not establish HDR output to the display.
-- NVIDIA sign-in persists locally. Browser data is not encrypted at rest;
+- Service sign-in persists locally. Browser data is not encrypted at rest;
   protect physical access to the card.
 - There is no OTA update system. The Chromium packages are held at the pinned
   version, so ordinary OS package upgrades do not update the browser.
@@ -110,4 +132,4 @@ documented in [maintenance](docs/maintenance.md).
 
 Cloudplay's recipe, helpers and theme are [MIT licensed](LICENSE). Bundled OS
 and browser packages retain their own licenses and source-distribution
-obligations. Cloudplay OS is not affiliated with or endorsed by NVIDIA.
+obligations. Cloudplay OS is not affiliated with or endorsed by NVIDIA or Microsoft.

@@ -25,9 +25,8 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   native-size appearance at 1080p and no cropping/distortion at other sizes.
 - Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
   from the selected initramfs, hands off to Chromium and has no long black gap.
-- With working networking, Chromium opens fullscreen at
-  `https://play.geforcenow.com/`; NVIDIA sign-in is the only requested login.
-  Cold Ethernet and saved-Wi-Fi boots show branding/network progress, then GFN:
+- With working networking, Cloudplay Home opens before any service browser.
+  Cold Ethernet and saved-Wi-Fi boots show branding/network progress, then Home:
   **no transient interactive setup page or localhost connection error**.
   Confirm Plymouth releases DRM before labwc and the matching image-only
   transition layer covers compositor/browser startup and restart backoff.
@@ -53,7 +52,7 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   federated/2FA login flows.
 - On a fresh wireless-capable board without Ethernet, the appliance onboarding
   can list networks, accept credentials, report a wrong password and retry,
-  then hand off to GeForce NOW. Test hidden SSIDs and the correct regulatory
+  then hand off to Cloudplay Home. Test hidden SSIDs and the correct regulatory
   country. Saved networking survives reboot without rerunning onboarding.
 - Test standard Pi5 onboard Wi-Fi and, separately, a CM5 configuration with
   no wireless interface: no endless scan/spinner or false “wrong password.”
@@ -62,7 +61,7 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   and power interruption during configuration. Network setup must not require
   a shared administrator password or an unsandboxed/root browser.
 - With healthy Ethernet, restart/fail the setup helper and return truncated
-  status responses: the actual-address fallback must still select GFN.
+  status responses: the actual-address fallback must still select Home.
   A genuinely offline, functioning helper opens OOBE after the bounded grace;
   a broken helper never launches its dead localhost URL as a fallback.
 - Verify the setup endpoint is not reachable from another LAN machine;
@@ -85,12 +84,37 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   Sign-out works. Offline profile deletion and manual reflash clear login.
 - Check keyboard shortcuts do not launch terminals, a root menu or desktop
   shell. Kiosk mode is not a security boundary against arbitrary browsing.
-- Close/crash the browser and compositor separately. Their own supervisors
-  relaunch with documented bounded backoff, without touching other processes.
+- Close/crash the service browser: return to Home without an automatic stream
+  reconnect. Kill Home during streaming: its supervised replacement must stop
+  the surviving service cgroup before displaying Home. Close/crash the
+  compositor separately; supervisors relaunch with documented bounded backoff.
   After repeated failures, verify the five-minute pause rather than a tight
   crash loop. Recovery must not require a desktop interface.
 - Test monitor unplug/replug, mode changes and power loss. No claim of
   flicker-free handoff or reliable recovery until these tests pass.
+
+## Home and service switching (not yet accepted on Pi)
+
+- Boot online and after network setup: Home is the first interactive service
+  screen. Navigate with keyboard, mouse and each supported wired/Bluetooth pad.
+- Launch GFN and Xbox independently. Preserve the pre-existing NVIDIA profile;
+  verify each login survives Home/reopen and reboot without cross-profile data.
+  Xbox sign-in, service compatibility and gameplay are separate unvalidated gates.
+- In each service, test Ctrl+Alt+Home and the two-second Select+Start hold on
+  login popups, active playback, pointer-locked games, DNS/offline errors and
+  browser-generated certificate/error pages (never bypass certificate checks).
+  Repeat with browser keyboard lock/shortcut inhibition enabled; the host Home
+  binding must still work without first releasing the website's input capture.
+  Native confirmation must become visible and keyboard/controller-focused.
+- Stay/Escape/B restores the service without closing it. Reload and confirmed
+  Home close all processes in the service cgroup, including audio/network
+  streaming; inspect the unit/process tree, not just the visible window.
+  Reload retains sign-in and opens the fixed service entry point.
+- Short/one-button presses, held A on entry, repeated holds, unplug/reconnect,
+  saturated input and ordinary keyboards must never cause an unintended leave.
+  Denied/missing gamepad access must leave the keyboard/menu fully usable.
+- Repeat GFN → Home → Xbox → Home cycles, browser/launcher crashes and service
+  stop failures. Never show successful Home with a hidden stream still active.
 
 ## Browser/extension and evidence boundaries
 

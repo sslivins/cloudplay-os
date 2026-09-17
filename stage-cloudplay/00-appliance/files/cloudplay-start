@@ -3,23 +3,7 @@ set -euo pipefail
 [[ "$(id -u)" == 1000 && "$(id -un)" == cloudplay ]] || exit 1
 [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" ]] || exit 1
 umask 077
-state="${XDG_CONFIG_HOME:-$HOME/.config}/cloudplay"
+state="$HOME/.config/cloudplay"
 mkdir -p "$state"
 chmod 700 "$state"
-[[ -f /opt/gfn-pi-compat/manifest.json ]] || { echo "Compatibility extension missing" >&2; exit 1; }
-profile="$state/chromium-profile"
-[[ ! -L "$profile" ]] || { echo "Profile must not be a symlink" >&2; exit 1; }
-mkdir -p "$profile"
-chmod 700 "$profile"
-exec /usr/bin/chromium \
-    --ozone-platform=wayland \
-    --use-angle=gles \
-    --user-data-dir="$profile" \
-    --load-extension=/opt/gfn-pi-compat \
-    --kiosk \
-    --no-first-run \
-    --no-default-browser-check \
-    --disable-session-crashed-bubble \
-    --noerrdialogs \
-    --password-store=basic \
-    https://play.geforcenow.com/
+exec /usr/bin/python3 /usr/local/lib/cloudplay/launcher/main.py

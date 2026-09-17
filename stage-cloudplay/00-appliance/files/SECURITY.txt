@@ -13,11 +13,19 @@ greetd opens a real PAM/logind session, then runs the minimal Wayland compositor
 and Chromium as cloudplay. Never add --no-sandbox, root-browser execution or
 remote-debugging switches. The normal Chromium sandbox remains enabled.
 
-Anyone with physical access can use the persisted NVIDIA/browser session.
-The browser profile is private to cloudplay (0700) but is NOT encrypted at rest.
+Anyone with physical access can use the persisted service/browser sessions.
+Browser profiles are private to cloudplay (0700) but are NOT encrypted at rest.
 The basic browser password store avoids a desktop keyring unlock dialog; do not
 save unrelated passwords. Kiosk mode is an appliance UI, not an isolation or
 browser navigation security boundary. Protect the device and removable media.
+
+Home and leave confirmation are native, unprivileged Wayland windows.
+The host shortcut uses an owner-only Unix socket, not a website-accessible HTTP
+API. Only fixed GFN/Xbox launch actions exist; the root network helper gains no
+process-control privileges. Returning Home stops the owned browser user cgroup
+but does not erase sign-in. Same-user native processes remain trusted.
+The input reader opens only classified non-keyboard gamepads; no broad input
+group membership is granted. Xbox compatibility and gameplay are unvalidated.
 
 All four custom Chromium packages are apt-held. Normal OS upgrades DO NOT
 deliver browser security fixes. Maintainers must review Chromium advisories,

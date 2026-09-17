@@ -12,6 +12,7 @@ if ! mountpoint -q "${ROOTFS_DIR}/dev/shm"; then
 fi
 on_chroot <<'CHROOT'
 python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/onboarding"); import network, service, readiness, boot, dbus, qrcode.image.svg'
+python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/launcher"); import host, gamepad, main, gi; gi.require_version("Gtk", "3.0"); from gi.repository import Gtk'
 install -d -m 755 /run/sshd
 systemd-analyze verify --man=no /etc/systemd/system/cloudplay-network.service \
     /etc/systemd/system/cloudplay-wifi-radio.service \
@@ -28,9 +29,15 @@ for directory in (Path("/home/cloudplay"), Path("/home/cloudplay/.config"),
     probe.unlink()
 PY
 install -d -m 700 -o cloudplay -g cloudplay /run/cloudplay-config-check
+rm -f /run/cloudplay-config-check/home-smoke.json
 runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
+    CLOUDPLAY_SMOKE_RESULT=/run/cloudplay-config-check/home-smoke.json \
     WLR_BACKENDS=headless WLR_RENDERER=pixman \
-    timeout --kill-after=5 20 dbus-run-session -- labwc -C /etc/cloudplay/labwc -S '/bin/sleep 1'
+    timeout --kill-after=5 20 dbus-run-session -- labwc -C /etc/cloudplay/labwc \
+    -S '/usr/bin/python3 /opt/cloudplay-build-inputs/check-launcher.py'
+# labwc need not propagate its session client's failure; require explicit success.
+test -f /run/cloudplay-config-check/home-smoke.json
+install -m 644 /run/cloudplay-config-check/home-smoke.json /usr/local/share/cloudplay/home-smoke.json
 rm -rf /run/cloudplay-config-check
 python3 /opt/cloudplay-build-inputs/verify-kiosk.py
 python3 /opt/cloudplay-build-inputs/package-manifest.py

@@ -21,10 +21,12 @@ cp -a stage-cloudplay build/pi-gen/
 rm -rf build/pi-gen/export-image/01-user-rename
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
 mkdir -p build/pi-gen/cloudplay-inputs/onboarding
+mkdir -p build/pi-gen/cloudplay-inputs/launcher
+cp launcher/{main.py,host.py,gamepad.py} build/pi-gen/cloudplay-inputs/launcher/
 cp onboarding/{network.py,service.py,client.py,readiness.py,boot.py,setup.html,setup.js,setup.css} \
     build/pi-gen/cloudplay-inputs/onboarding/
 cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py \
-    scripts/supervise.py scripts/verify-kiosk.py build/pi-gen/cloudplay-inputs/
+    scripts/supervise.py scripts/verify-kiosk.py scripts/check-launcher.py build/pi-gen/cloudplay-inputs/
 python3 scripts/artifacts.py stage --destination build/pi-gen/cloudplay-inputs/artifacts
 cp scripts/export-manifest.sh build/pi-gen/export-image/04-cloudplay-manifest/00-run.sh
 git -c safe.directory="$PWD" rev-parse HEAD > build/pi-gen/cloudplay-inputs/cloudplay-commit.txt

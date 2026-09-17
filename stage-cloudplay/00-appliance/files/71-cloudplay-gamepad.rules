@@ -1,0 +1,4 @@
+# Read only classified gamepad event nodes, never a combined keyboard interface.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_JOYSTICK}=="1", ENV{ID_INPUT_KEYBOARD}!="1", GROUP="cloudplay-gamepad", MODE="0660", SYMLINK+="input/cloudplay-gamepad-%k"
+# Chromium may read the joydev interface; do not restore broad input membership.
+SUBSYSTEM=="input", KERNEL=="js*", ENV{ID_INPUT_JOYSTICK}=="1", ENV{ID_INPUT_KEYBOARD}!="1", GROUP="cloudplay-gamepad", MODE="0640"

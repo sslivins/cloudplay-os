@@ -92,7 +92,7 @@ async function poll() {
     el("phone").disabled = waiting;
     if (!submitting) el("error").textContent = state.error;
     el("status").textContent = state.connected
-      ? (local ? "Connected. Opening GeForce NOW…" : "Connected. Continue on the TV.")
+      ? (local ? "Connected. Opening Cloudplay Home…" : "Connected. Continue on the TV.")
       : state.phase === "connecting" ? "Applying network settings…"
       : state.phase === "checking" ? "Checking Ethernet and saved Wi-Fi…"
       : state.phase === "error" ? "Network setup needs attention."

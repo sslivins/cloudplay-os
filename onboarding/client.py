@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Use a separate ephemeral, sandboxed setup browser before the persistent GFN one."""
+"""Use a separate ephemeral, sandboxed network setup browser before Home."""
 import os
 import shutil
 import signal
@@ -70,7 +70,7 @@ def main():
             child.wait()
             shutil.rmtree(profile, ignore_errors=True)
     if not stopping.is_set():
-        print("Cloudplay startup: launching persistent GeForce NOW browser", flush=True)
+        print("Cloudplay startup: launching Cloudplay Home", flush=True)
         os.execv("/usr/local/bin/cloudplay-start", ["cloudplay-start"])
 
 
