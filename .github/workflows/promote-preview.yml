@@ -68,17 +68,50 @@ jobs:
           [[ "${images[0]}" =~ ^image_[0-9A-Za-z._-]+\.img\.xz$ ]]
           release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
           [[ "$release_id" =~ ^[0-9]+$ ]]
-          # Stream large uploads with HTTP/1.1 and explicit timeout/stall limits.
-          # REST rejects duplicate names; never overwrite or publish the draft.
-          printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" |
-            curl --config - --ipv4 --http1.1 --request POST \
-              --header 'Content-Type: application/octet-stream' \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2022-11-28' --header 'Expect:' \
-              --fail-with-body --silent --show-error \
-              --connect-timeout 20 --max-time 4500 --speed-limit 1024 --speed-time 90 \
-              --upload-file "${images[0]}" --output uploaded-asset.json \
-              --write-out 'Image upload HTTP %{http_code}; bytes %{size_upload}; seconds %{time_total}\n' \
-              "https://uploads.github.com/repos/$GH_REPO/releases/$release_id/assets?name=${images[0]}"
-          jq -e --arg digest "sha256:$IMAGE_SHA256" \
-            '.state == "uploaded" and .digest == $digest' uploaded-asset.json
+          asset_name="${images[0]}"
+          expected_digest="sha256:$IMAGE_SHA256"
+          reconcile_asset() {
+            gh api "repos/$GH_REPO/releases/$release_id/assets" --paginate > release-assets.json
+            matches="$(jq --arg name "$asset_name" '[.[] | select(.name == $name)]' release-assets.json)"
+            [[ "$(jq length <<<"$matches")" -le 1 ]]
+            if jq -e --arg digest "$expected_digest" \
+                '.[0].state == "uploaded" and .[0].digest == $digest' <<<"$matches" >/dev/null; then
+              return 0
+            fi
+            if jq -e '.[0].state == "uploaded"' <<<"$matches" >/dev/null; then
+              echo "Existing uploaded asset has the wrong digest" >&2
+              return 2
+            fi
+            starter_id="$(jq -r '.[0] | select(.state == "starter") | .id // empty' <<<"$matches")"
+            if [[ -n "$starter_id" ]]; then
+              gh api --method DELETE "repos/$GH_REPO/releases/assets/$starter_id"
+            fi
+            return 1
+          }
+          # GitHub can return transient 5xx responses after receiving part of a
+          # large asset. Retry from a clean server-side state, never overwrite
+          # an uploaded asset, and require the final server-computed digest.
+          for attempt in 1 2 3 4 5 6; do
+            if reconcile_asset; then exit 0; else result=$?; fi
+            [[ "$result" -eq 1 ]]
+            echo "Image upload attempt $attempt of 6"
+            if printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" |
+                curl --config - --ipv4 --http1.1 --request POST \
+                  --header 'Content-Type: application/octet-stream' \
+                  --header 'Accept: application/vnd.github+json' \
+                  --header 'X-GitHub-Api-Version: 2022-11-28' --header 'Expect:' \
+                  --fail-with-body --silent --show-error \
+                  --connect-timeout 20 --max-time 1200 --speed-limit 1024 --speed-time 90 \
+                  --upload-file "$asset_name" --output uploaded-asset.json \
+                  --write-out 'Image upload HTTP %{http_code}; bytes %{size_upload}; seconds %{time_total}\n' \
+                  "https://uploads.github.com/repos/$GH_REPO/releases/$release_id/assets?name=$asset_name"; then
+              jq -e --arg digest "$expected_digest" \
+                '.state == "uploaded" and .digest == $digest' uploaded-asset.json
+              exit 0
+            fi
+            if reconcile_asset; then exit 0; else result=$?; fi
+            [[ "$result" -eq 1 ]]
+            sleep $((attempt * 10))
+          done
+          echo "Image upload failed after 6 bounded attempts" >&2
+          exit 1
