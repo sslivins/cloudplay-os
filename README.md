@@ -8,9 +8,9 @@ It uses [Chromium with Raspberry Pi HEVC support](https://github.com/sslivins/ch
 and the [GeForce NOW compatibility extension](https://github.com/sslivins/gfn-pi-compat).
 The browser runs as an unprivileged user with its normal sandbox.
 
-**Development preview:** there is no stable release yet. Earlier downloadable
-images have known startup defects; a replacement preview is being prepared.
-4K streaming and HDR display output are not yet validated.
+**Development preview:** [download the current preview](https://github.com/sslivins/cloudplay-os/actions/runs/35182932978).
+GitHub sign-in may be required to download the artifact. There is no stable
+release yet; 4K streaming and HDR display output are not yet validated.
 
 ## What you need
 
@@ -25,10 +25,9 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
 
 ## Getting started
 
-1. Obtain a current preview image from the
-   [image-build workflow](https://github.com/sslivins/cloudplay-os/actions/workflows/build-image.yml),
-   or build from source below. Check the download warning above before using
-   an older artifact.
+1. Open the preview build linked above and download its
+   `cloudplay-os-kiosk-preview-...` image artifact, not the build log.
+   Artifacts are short-lived; if the download has expired, build from source below.
 2. Extract the workflow artifact and verify the image against its `SHA256SUMS`.
    In Raspberry Pi Imager, choose **Use custom** and select the `.img.xz` file.
 3. Select the intended card and flash it. **Flashing erases that card.** Never
