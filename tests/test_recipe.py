@@ -479,12 +479,13 @@ class RecipeSafetyTest(unittest.TestCase):
     def test_preview_promotion_requires_matching_reviewed_image_and_stays_draft(self):
         workflow = (ROOT / ".github/workflows/promote-preview.yml").read_text()
         for required in (
-                "workflow_dispatch:", "actions: read", "timeout-minutes: 90",
+                "workflow_dispatch:", "actions: read", "runs-on: ubuntu-24.04-arm",
+                "timeout-minutes: 90",
                 '.conclusion == "success" and .headSha == $sha',
                 '.isDraft == true and .isPrerelease == true',
                 'commits/$RELEASE_TAG', 'provenance/cloudplay-commit.txt',
                 "sha256sum --check SHA256SUMS", '"$IMAGE_SHA256"',
-                'gh run download "$RUN_ID"', "curl --config - --http1.1",
+                'gh run download "$RUN_ID"', "curl --config - --ipv4 --http1.1",
                 "--max-time 4500", "--speed-limit 1024 --speed-time 90",
                 '.state == "uploaded" and .digest == $digest'):
             self.assertIn(required, workflow)
