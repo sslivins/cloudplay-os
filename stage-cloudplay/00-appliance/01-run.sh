@@ -7,6 +7,7 @@ install -d "${ROOTFS_DIR}/usr/local/lib/cloudplay" "${ROOTFS_DIR}/usr/local/bin"
     "${ROOTFS_DIR}/etc/systemd/system/greetd.service.d" \
     "${ROOTFS_DIR}/etc/systemd/system/plymouth-quit.service.d" \
     "${ROOTFS_DIR}/etc/systemd/logind.conf.d" \
+    "${ROOTFS_DIR}/etc/systemd/journald.conf.d" \
     "${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d" \
     "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay"
 cp -a "${inputs}/." "${ROOTFS_DIR}/opt/cloudplay-build-inputs/"
@@ -14,6 +15,7 @@ cp -a "${inputs}/onboarding" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type d -exec chmod 755 {} +
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type f -exec chmod 644 {} +
 install -m 644 files/cloudplay-network.service files/cloudplay-wifi-radio.service "${ROOTFS_DIR}/etc/systemd/system/"
+install -m 644 files/cloudplay-diagnostics.conf "${ROOTFS_DIR}/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf"
 install -m 755 files/cloudplay-start files/cloudplay-session files/cloudplay-browser-session "${ROOTFS_DIR}/usr/local/bin/"
 install -m 755 "${inputs}/install-extension.py" "${inputs}/supervise.py" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
 install -m 755 "${inputs}/hdr-readiness.py" "${ROOTFS_DIR}/usr/local/bin/cloudplay-hdr-check"
@@ -37,6 +39,7 @@ apt-mark hold chromium chromium-common chromium-sandbox chromium-l10n
 usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay
 usermod --password '*' root
 chmod 700 /home/cloudplay
+install -d -m 2755 -o root -g systemd-journal /var/log/journal
 install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay/.config/cloudplay
 systemctl mask ssh.service ssh.socket userconfig.service getty@.service serial-getty@.service
 systemctl enable greetd.service

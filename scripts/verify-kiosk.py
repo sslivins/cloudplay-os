@@ -54,6 +54,10 @@ def main():
     for setting in ("ProtectHome=yes", "ProtectSystem=strict", "NoNewPrivileges=yes",
                     "StateDirectoryMode=0700"):
         assert setting in network_unit
+    diagnostics = Path("/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf").read_text()
+    for setting in ("Storage=persistent", "SystemMaxUse=64M", "SyncIntervalSec=15s"):
+        assert setting in diagnostics
+    assert Path("/var/log/journal").is_dir()
     for unit in ("cloudplay-network.service", "cloudplay-wifi-radio.service"):
         assert Path("/etc/systemd/system/multi-user.target.wants", unit).is_symlink()
     cmdline = Path("/boot/firmware/cmdline.txt").read_text().split()
@@ -84,6 +88,7 @@ def main():
         "/boot/firmware/cmdline.txt", "/boot/firmware/config.txt",
         "/etc/systemd/system/cloudplay-network.service",
         "/etc/systemd/system/cloudplay-wifi-radio.service",
+        "/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf",
     ]
     paths += ["/usr/local/lib/cloudplay/onboarding/" + name for name in
               ("network.py", "service.py", "client.py", "setup.html", "setup.js", "setup.css")]

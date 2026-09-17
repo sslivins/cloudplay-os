@@ -177,6 +177,13 @@ or persistent NVIDIA profile are changed by this diagnostic fix.
 The exact shipped image has `/var/log/journal` (root:systemd-journal, mode2755)
 and journald's default `Storage=auto`, so persistent journal storage is
 expected. The last unsynced tail can still be lost after abrupt power removal.
+The tightly coupled diagnostic update makes persistence explicit, caps system
+journals at 64 MiB (retaining 128 MiB free), caps runtime logs at 16 MiB and
+syncs every 15 seconds with seven-day retention. This reduces, not eliminates,
+the loss risk on power failure; prefer an orderly shutdown or `journalctl --sync`
+when recovery access is available. It does not send logs to the boot console.
+The helper explicitly uses journal stdout/stderr with identifier
+`cloudplay-network`; browser/session output keeps `cloudplay-session`.
 After the operator boots separate storage and mounts the SD root **read-only**,
 inspect, for example:
 
@@ -201,6 +208,15 @@ diagnostic retrieval path. Recovery/targeted offline patching is an operator
 action; keep original files and record patch hashes because a hotfix makes
 the image differ from its shipped provenance. No automatic reflash or rebuild
 is part of this diagnosis.
+
+The operator may separately enable **temporary key-only SSH on the test SD**
+for this recovery, while retaining locked passwords. That is not a production
+default or a new access mechanism in this recipe: SSH remains masked here.
+The normal `cloudplay` account cannot read all system journals; diagnostic SSH
+requires an appropriately authorized account or a deliberate temporary
+`systemd-journal` group grant on that test image. Do not add broad sudo, shared
+passwords or authorized keys to this public recipe. Record and remove temporary
+access changes when testing is complete.
 
 ## Browser/extension security debt
 

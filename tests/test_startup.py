@@ -116,6 +116,21 @@ class ManagerStartupTest(unittest.TestCase):
         net.call.assert_not_called()
         net.scan.assert_not_called()
 
+    def test_persistent_diagnostics_are_bounded_without_enabling_ssh(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        config = (files / "cloudplay-diagnostics.conf").read_text()
+        for setting in ("Storage=persistent", "SystemMaxUse=64M", "SystemKeepFree=128M",
+                        "RuntimeMaxUse=16M", "SyncIntervalSec=15s", "MaxRetentionSec=7d",
+                        "ForwardToConsole=no"):
+            self.assertIn(setting, config)
+        unit = (files / "cloudplay-network.service").read_text()
+        for setting in ("StandardOutput=journal", "StandardError=journal",
+                        "SyslogIdentifier=cloudplay-network"):
+            self.assertIn(setting, unit)
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        self.assertIn("install -d -m 2755 -o root -g systemd-journal /var/log/journal", stage)
+        self.assertIn("systemctl mask ssh.service ssh.socket", stage)
+
 
 class BrowserHandoffTest(unittest.TestCase):
     def setUp(self):
