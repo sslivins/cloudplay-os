@@ -4,19 +4,21 @@ Cloudplay OS turns a Raspberry Pi into a cloud-gaming appliance, with a branded
 startup screen and Wi-Fi setup when needed. Services open in full-screen
 Chromium; there is no desktop or operating-system account wizard.
 
-**Beta 1 boots directly to GeForce NOW.** Current source builds add
+**The linked preview boots directly to GeForce NOW.** Current source builds add
 **Cloudplay Home**, a controller-friendly menu for **GeForce NOW** and
 **Xbox Cloud Gaming**, plus return-to-Home controls. These additions are not
-included in beta 1 and still require Pi hardware acceptance. Xbox is an
+included in that preview and still require Pi hardware acceptance. Xbox is an
 **unvalidated Pi entry point**, not a claim of working sign-in or gameplay.
 
 It uses [Chromium with Raspberry Pi HEVC support](https://github.com/sslivins/chromium-rpi-hevc)
 and the [GeForce NOW compatibility extension](https://github.com/sslivins/gfn-pi-compat).
 The browser runs as an unprivileged user with its normal sandbox.
 
-**Development beta:** [download beta 1](https://github.com/sslivins/cloudplay-os/releases/tag/v0.1.0-beta.1).
-There is no stable release yet; 4K streaming and HDR display output are not
-yet validated. See the release notes for known limitations.
+**Development preview:** [download the GeForce NOW image](https://github.com/sslivins/cloudplay-os/actions/runs/35182932978).
+Download the `cloudplay-os-kiosk-preview-...` artifact, not the build log.
+GitHub sign-in may be required; workflow artifacts expire. A permanent beta
+download is not yet available. There is no stable release; 4K streaming and
+HDR display output are not yet validated.
 
 ## What you need
 
@@ -31,7 +33,8 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
 
 ## Getting started
 
-1. Open the beta release linked above and download its `.img.xz` and `SHA256SUMS`.
+1. Download and extract the preview artifact linked above to obtain its
+   `.img.xz` and `SHA256SUMS`.
 2. Verify the image against `SHA256SUMS`.
    In Raspberry Pi Imager, choose **Use custom** and select the `.img.xz` file.
 3. Select the intended card and flash it. **Flashing erases that card.** Never
@@ -39,14 +42,14 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
    Skip Imager's account and SSH customization; Cloudplay provides its own.
 4. Insert the card, connect the display and input devices, and power on.
    Ethernet is the simplest first-boot connection.
-5. With networking available, beta 1 opens GeForce NOW directly. Sign in to
+5. With networking available, the linked preview opens GeForce NOW directly. Sign in to
    NVIDIA and choose a game. Keep a keyboard and mouse available for sign-in.
 
 ### Cloudplay Home (source builds)
 
 Choose a service using the D-pad and A, or keyboard arrows/Tab and Enter.
 Keep a keyboard and mouse available for sign-in and unsupported controllers.
-The following controls are not present in the beta 1 image.
+The following controls are not present in the linked GeForce NOW preview.
 
 From any service page—including browser error pages—press **Ctrl+Alt+Home**
 (then release), or hold **Select/Back + Start/Menu together for two seconds**.
