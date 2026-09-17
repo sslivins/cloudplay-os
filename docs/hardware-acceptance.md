@@ -2,7 +2,10 @@
 
 The earlier desktop image was booted and rejected: it exposed Raspberry Pi's
 desktop and OS setup rather than the requested appliance. The **new Lite
-kiosk design is not yet physically boot-validated**. Record each item below
+kiosk design is not yet physically boot-validated**. Its first reported boot of
+image `35168527444` failed: a localhost attempt, then black screen with cursor.
+A source-level network-initialization defect is reproduced and fixed in source;
+device-log correlation and black-screen diagnosis remain pending. Record each item below
 as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
 The 1920×1080 splash artwork was approved on 2026-09-16. Build `35168527444`

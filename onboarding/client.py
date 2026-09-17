@@ -45,6 +45,7 @@ def main():
             if profile.exists():
                 shutil.rmtree(profile)
             profile.mkdir(mode=0o700)
+            print("Cloudplay startup: launching temporary network-setup browser", flush=True)
             child = subprocess.Popen([
                 "/usr/bin/chromium", "--ozone-platform=wayland", "--use-angle=gles",
                 "--kiosk", "--no-first-run", "--no-default-browser-check",
@@ -56,6 +57,8 @@ def main():
                     break
                 stopping.wait(0.25)
             if not stopping.is_set() and child.poll() is not None and not ready():
+                print(f"Cloudplay startup: setup browser exited {child.returncode} before network readiness",
+                      flush=True)
                 raise SystemExit(1)  # The existing supervisor handles bounded restart/backoff.
     finally:
         if child:
@@ -72,6 +75,7 @@ def main():
             child.wait()
             shutil.rmtree(profile, ignore_errors=True)
     if not stopping.is_set():
+        print("Cloudplay startup: launching persistent GeForce NOW browser", flush=True)
         os.execv("/usr/local/bin/cloudplay-start", ["cloudplay-start"])
 
 

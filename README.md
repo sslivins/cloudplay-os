@@ -1,5 +1,13 @@
 # Cloudplay OS — direct-to-GeForce-NOW kiosk preview
 
+**Known physical-boot failure in image build 35168527444:** the operator
+reported a localhost setup attempt followed by a black screen/cursor. Source
+diagnosis reproduced a NetworkManager startup bug that can wrongly send working
+Ethernet to setup; a surgical source fix is under recovery validation. The
+black-screen cause still needs the device journal. **The downloadable image
+below contains that bug; build/inspection success is not physical acceptance.**
+See [startup diagnostics](docs/maintenance.md#startup-diagnostics-and-known-preview-defect).
+
 **An appliance, not the Raspberry Pi desktop.** Boot is designed to show a
 **Cloudplay OS** splash, start a minimal Wayland session, and immediately open
 full-screen Chromium at **https://play.geforcenow.com/** for NVIDIA sign-in.

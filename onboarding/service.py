@@ -5,6 +5,7 @@ import io
 import json
 import os
 import queue
+import re
 import secrets
 import signal
 import socket
@@ -20,6 +21,15 @@ PORT = 8765
 STATE = Path("/var/lib/cloudplay-network")
 DNS = Path("/etc/NetworkManager/dnsmasq-shared.d/cloudplay-portal.conf")
 ASSETS = Path(__file__).parent
+
+
+def failure_code(error):
+    code = type(error).__name__
+    get_name = getattr(error, "get_dbus_name", None)
+    name = get_name() if callable(get_name) else None
+    if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,150}", name):
+        code += ":" + name
+    return code
 
 
 class Controller:
@@ -121,12 +131,16 @@ class Controller:
             if self.network is None:
                 self.network = Network()
             self.dns.unlink(missing_ok=True)
+            initial = self.network.snapshot()
+            self.update(**initial)
             saved = self.state_dir / "country"
             if saved.exists() and saved.read_text().strip() in self.countries:
                 country = saved.read_text().strip()
-                self.network.set_country(country)
+                if not initial["connected"] and initial["has_wifi"]:
+                    self.network.set_country(country)
                 self.update(country=country)
-            self.network.enable()
+            if not initial["connected"]:
+                self.network.enable()
             grace = time.monotonic() + 20
             last_scan = 0
             while not self.stop.is_set():
@@ -160,13 +174,13 @@ class Controller:
                     if not self.network.snapshot()["connected"]:
                         self.step(action, data)
                 except Exception as error:
-                    print(f"Cloudplay network setup failed ({type(error).__name__})", flush=True)
+                    print(f"Cloudplay network setup failed ({failure_code(error)})", flush=True)
                     self.update(error="Network setup failed. Check the password, country and signal, then retry.")
                 finally:
                     data.clear()
                     self.update(phase="setup")
         except Exception as error:
-            print(f"Cloudplay network service unavailable ({type(error).__name__})", flush=True)
+            print(f"Cloudplay network service unavailable ({failure_code(error)})", flush=True)
             self.failed = True
             self.update(phase="error", error="Network service unavailable. Connect Ethernet or restart the appliance.")
             self.stop.wait(5)

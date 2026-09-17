@@ -107,9 +107,18 @@ class Network:
         }
 
     def enable(self):
-        self.call(ROOT, NM, "Enable", True)
-        self.call(ROOT, "org.freedesktop.DBus.Properties", "Set",
-                  NM, "WirelessEnabled", self.dbus.Boolean(True))
+        current = self.properties(ROOT, NM)
+        if not current["NetworkingEnabled"]:
+            try:
+                self.call(ROOT, NM, "Enable", True)
+            except self.dbus.DBusException as error:
+                # Another client may have enabled it after our read. NM rejects no-op Enable calls.
+                if (error.get_dbus_name() != NM + ".AlreadyEnabledOrDisabled"
+                        or not self.properties(ROOT, NM)["NetworkingEnabled"]):
+                    raise
+        if not current["WirelessEnabled"]:
+            self.call(ROOT, "org.freedesktop.DBus.Properties", "Set",
+                      NM, "WirelessEnabled", self.dbus.Boolean(True))
 
     def scan(self):
         wifi = self.wifi()

@@ -143,6 +143,65 @@ admin method is required. Protect boot configuration and browser profiles.
 For reflash, boot another root device and have the operator identify/unmount
 the target. Never overwrite mounted/running root storage.
 
+## Startup diagnostics and known preview defect
+
+The first physical boot reported for image `35168527444` (SHA256
+`2d2a1abf18a7ed8d77bf65a61c26c746824d1672bb764a277708e18fd498c18f`)
+attempted localhost setup and then showed a black screen/cursor. Image
+readback was reported to match before boot. Do not infer that the complete
+symptom is explained until the device journal is examined.
+
+A **source-level cause of incorrect setup selection is reproduced**:
+NetworkManager 1.52.1 `src/core/nm-manager.c:impl_manager_enable` rejects a
+redundant `Enable(true)` with `AlreadyEnabledOrDisabled`. The shipped helper
+called it unconditionally before its first readiness snapshot. On an already
+enabled manager, this marks the helper failed even with working Ethernet.
+The old log only said `Cloudplay network service unavailable (DBusException)`;
+the service then restarts. Earlier mock-based tests did not model this API
+error and therefore missed it.
+
+The source fix checks an existing link first, leaves connected networking
+alone, enables only disabled settings and handles the specific concurrent-enable
+race. Error diagnostics include a validated D-Bus error **name**, never its
+potentially credential-bearing message. Protocol-faithful tests reproduce the
+old failure; separate launcher tests exercise direct GFN, temporary-browser
+cleanup/handoff and failed-child propagation into supervisor backoff.
+
+The **black-screen cause remains unconfirmed**. Repeated browser/client exits
+can produce a five-minute supervisor pause after six failures. Look for
+`Cloudplay child exited ...; retry in 300s`, compositor/session exits and
+Chromium stderr. New source-only phase messages distinguish temporary setup
+launch from persistent GFN launch. No browser version/flags, sandbox, artwork
+or persistent NVIDIA profile are changed by this diagnostic fix.
+
+The exact shipped image has `/var/log/journal` (root:systemd-journal, mode2755)
+and journald's default `Storage=auto`, so persistent journal storage is
+expected. The last unsynced tail can still be lost after abrupt power removal.
+After the operator boots separate storage and mounts the SD root **read-only**,
+inspect, for example:
+
+```sh
+journalctl --directory=/mnt/cloudplay/var/log/journal --list-boots --no-pager
+journalctl --directory=/mnt/cloudplay/var/log/journal \
+  -u cloudplay-network.service -u NetworkManager.service -u greetd.service --no-pager
+journalctl --directory=/mnt/cloudplay/var/log/journal -t cloudplay-session --no-pager
+```
+
+Substitute the actual read-only mount path; these commands do not mount or
+modify it. The session/browser stderr is inherited through `systemd-cat` with
+identifier **cloudplay-session**, so querying only `greetd.service` can miss
+it. There is no configured browser log file or debug listener. Also inspect
+`/var/log/cloud-init.log`, `/var/log/cloud-init-output.log` and, if present,
+coredump metadata. Do not publish raw cores, NVIDIA profiles, cookies or
+unredacted network credentials.
+
+SSH/gettys are masked and the setup service is loopback-only unless the
+private phone AP is explicitly started. There is no intended general-LAN
+diagnostic retrieval path. Recovery/targeted offline patching is an operator
+action; keep original files and record patch hashes because a hotfix makes
+the image differ from its shipped provenance. No automatic reflash or rebuild
+is part of this diagnosis.
+
 ## Browser/extension security debt
 
 All four v0.4.1 Chromium packages are held together. An ordinary apt upgrade
