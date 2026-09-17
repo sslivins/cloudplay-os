@@ -267,6 +267,33 @@ class RecipeSafetyTest(unittest.TestCase):
         build = (ROOT / "scripts/build-image.sh").read_text()
         self.assertIn("client.py,readiness.py,boot.py,setup.html", build)
 
+    def test_early_splash_gate_does_not_wait_for_late_cloud_final(self):
+        unit = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-startup.service").read_text()
+        dependencies = " ".join(re.findall(r"^(?:Wants|After)=(.*)$", unit, re.MULTILINE)).split()
+        self.assertNotIn("cloud-final.service", dependencies)
+        self.assertIn("cloudplay-network.service", dependencies)
+        greetd = (ROOT / "stage-cloudplay/00-appliance/files/greetd-kiosk.conf").read_text()
+        self.assertIn("After=cloud-final.service", greetd)
+
+    def test_full_boot_graph_rejects_cycles_even_when_systemd_exits_zero(self):
+        result = SimpleNamespace(returncode=0, stdout="", stderr=(
+            "multi-user.target: Found ordering cycle on cloudplay-startup.service/start\n"
+            "Job cloudplay-startup.service/start deleted to break ordering cycle\n"))
+        with patch.object(verifier.subprocess, "run", return_value=result) as run:
+            with self.assertRaisesRegex(AssertionError, "ordering cycle"):
+                verifier.verify_boot_order()
+        self.assertEqual(run.call_args.args[0][-1], "graphical.target")
+        self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
+
+    def test_full_boot_graph_accepts_clean_graph_and_rejects_command_failure(self):
+        with patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="", stderr="")):
+            self.assertFalse(verifier.verify_boot_order()["ordering_cycles"])
+        with patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(
+                returncode=1, stdout="", stderr="Failed to load unit")):
+            with self.assertRaisesRegex(AssertionError, "Failed to load unit"):
+                verifier.verify_boot_order()
+
     def test_ssh_effective_config_parser_and_locked_password_handling(self):
         settings = verifier.ssh_settings(
             "permitrootlogin no\ndenyusers root\ndenyusers cloudplay\npasswordauthentication yes\n")

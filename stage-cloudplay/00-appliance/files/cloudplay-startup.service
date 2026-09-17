@@ -1,7 +1,9 @@
 [Unit]
 Description=Cloudplay branded network readiness gate
-Wants=cloudplay-network.service cloud-final.service
-After=cloudplay-network.service cloud-final.service plymouth-start.service
+# cloud-final runs after multi-user.target, which waits for this early gate.
+# Waiting for cloud-final here creates a cycle and systemd drops the gate.
+Wants=cloudplay-network.service
+After=cloudplay-network.service plymouth-start.service
 Before=plymouth-quit.service plymouth-quit-wait.service greetd.service
 
 [Service]

@@ -21,6 +21,17 @@ def effective_journal_settings(text):
     return dict(config["Journal"])
 
 
+def verify_boot_order():
+    result = subprocess.run(
+        ["systemd-analyze", "verify", "--man=no", "graphical.target"],
+        capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
+    diagnostics = result.stdout + result.stderr
+    assert result.returncode == 0, diagnostics
+    # systemd can report success after deleting jobs to resolve a boot cycle.
+    assert "ordering cycle" not in diagnostics.lower(), diagnostics
+    return {"target": "graphical.target", "ordering_cycles": False}
+
+
 def home_directory_metadata(home, uid, gid):
     metadata = {}
     for path in (home, home / ".config", home / ".config/cloudplay"):
@@ -87,6 +98,7 @@ def main():
                 "dnsmasq-base", "python3-dbus", "python3-qrcode", "iw", "rfkill",
                 "wpasupplicant", "wireless-regdb"}
     assert required <= names, f"Missing kiosk packages: {required - names}"
+    boot_order = verify_boot_order()
     account = pwd.getpwnam("cloudplay")
     assert account.pw_uid == 1000 and account.pw_shell == "/bin/bash"
     home_metadata = home_directory_metadata(Path(account.pw_dir), account.pw_uid, account.pw_gid)
@@ -228,6 +240,7 @@ def main():
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "startup_gate": "bounded DHCP wait before Plymouth releases DRM; helper failure does not force setup",
+        "boot_order": boot_order,
         "journal_effective_settings": journal,
         "home_directories": home_metadata,
         "initramfs": initramfs, "boot_validated": False,

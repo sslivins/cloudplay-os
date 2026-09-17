@@ -52,9 +52,12 @@ No uniqueness or trademark clearance is asserted.
 `plymouth-set-default-theme cloudplay` selects it. The recipe adds
 VC4/V3D to initramfs modules, preserves `auto_initramfs=1`, adds `quiet splash`,
 disables the firmware rainbow splash and ordinary console/status banners,
-and overrides Plymouth quit with `--retain-splash`. The new startup gate orders
-after cloud-init finalization and the network helper but **before both Plymouth
-quit units and greetd**. It waits up to 30 seconds for actual network readiness
+and overrides Plymouth quit with `--retain-splash`. The startup gate orders
+after the network helper but **before both Plymouth quit units and greetd**.
+It must not wait for `cloud-final.service`: that service runs after
+`multi-user.target`, which already waits for the early splash gate. That cycle
+causes systemd to skip the gate. greetd independently waits for cloud-init
+finalization. The gate waits up to 30 seconds for actual network readiness
 (40-second unit hard limit), then briefly displays the result. It never keeps
 Plymouth's DRM ownership while labwc starts. The same background is rendered by
 an unprivileged, image-only `swaybg` layer beneath the browser, covering handoff
@@ -67,6 +70,10 @@ checks that **every** kernel initrd contains the custom theme, script plugin
 and VC4 driver, plus the background, all spinner frames and label plugin.
 pi-gen's final export regenerates the same configured initrds;
 the downloadable image must also be inspected before handoff.
+
+The image verifier checks the complete `graphical.target` boot graph, including
+target dependencies. It rejects ordering-cycle diagnostics even if
+`systemd-analyze verify` exits successfully after dropping a job.
 
 None of these static checks proves that Plymouth renders correctly on a
 specific CM5/Pi/display, that the kernel loads the expected firmware initrd,
