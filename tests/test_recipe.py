@@ -485,11 +485,11 @@ class RecipeSafetyTest(unittest.TestCase):
                 '.isDraft == true and .isPrerelease == true',
                 'commits/$RELEASE_TAG', 'provenance/cloudplay-commit.txt',
                 "sha256sum --check SHA256SUMS", '"$IMAGE_SHA256"',
-                'gh run download "$RUN_ID"', "curl --config - --ipv4 --http1.1",
-                "for attempt in 1 2 3 4 5 6", "--max-time 1200",
-                "--speed-limit 1024 --speed-time 90", 'state == "starter"',
+                'gh run download "$RUN_ID"', "for attempt in 1 2 3 4 5 6",
+                "timeout --kill-after=30 20m", 'gh release upload "$RELEASE_TAG"',
+                'state == "starter"',
                 "releases/assets/$starter_id", "Existing uploaded asset has the wrong digest",
-                '.state == "uploaded" and .digest == $digest'):
+                '.[0].state == "uploaded" and .[0].digest == $digest'):
             self.assertIn(required, workflow)
         for forbidden in ("--clobber", "gh release create", "gh release edit",
                           "scripts/build-image.sh"):
