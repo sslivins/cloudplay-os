@@ -1,7 +1,14 @@
 CLOUDPLAY OS IS AN UNSIGNED, HARDWARE-UNVALIDATED KIOSK PREVIEW.
 
 The fixed cloudplay account (UID 1000) and root have locked passwords.
-There is no universal password, OS owner wizard, desktop or default SSH.
+TEMPORARY DEVELOPMENT SSH IS ENABLED: user cloud, password cloud.
+This is an explicitly PUBLIC default credential, not a production secret.
+The separate cloud account has password-required sudo and can read/change the
+whole system, including browser data. Use only on a trusted development network;
+do not expose port 22 to the Internet. Root and cloudplay SSH login are denied.
+Set CLOUDPLAY_DEVELOPMENT_SSH=0 in the build config to remove this preview access
+from newly built images. This exception must be removed before production.
+There is no OS owner wizard or desktop.
 greetd opens a real PAM/logind session, then runs the minimal Wayland compositor
 and Chromium as cloudplay. Never add --no-sandbox, root-browser execution or
 remote-debugging switches. The normal Chromium sandbox remains enabled.
@@ -26,8 +33,9 @@ normal sandbox. The root network helper cannot read user homes and accepts
 only narrow validated network operations; it never logs network passwords.
 An optional phone hotspot uses fresh WPA credentials displayed locally; its
 portal is AP-interface-only and closes before joining the home LAN.
-There is no OS account wizard, terminal greeter, recovery partition or admin
-password. Recovery is offline media editing or reflash from a separate system;
+There is no OS account wizard, terminal greeter or recovery partition.
+Development recovery can use ssh cloud@DEVICE_IP and password-required sudo.
+With development SSH disabled, recovery is offline editing or reflash;
 never overwrite a running root filesystem. Profiles contain session credentials.
 
 Checksums detect corruption, not publisher identity. A separately reviewed

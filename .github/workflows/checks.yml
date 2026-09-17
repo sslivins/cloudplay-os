@@ -17,3 +17,4 @@ jobs:
           find scripts stage-cloudplay -type f \( -name '*.sh' -o -name 'cloudplay-start' -o -name 'cloudplay-session' -o -name 'cloudplay-browser-session' -o -name 'labwc-autostart' \) -print0 |
             xargs -0 -r -n1 bash -n
           bash -n config
+          bash -n stage-cloudplay/00-appliance/files/cloudplay-development-ssh

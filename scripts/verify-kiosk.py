@@ -7,6 +7,9 @@ import stat
 import re
 import subprocess
 import tomllib
+import ctypes
+import hmac
+import os
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -29,6 +32,46 @@ def home_directory_metadata(home, uid, gid):
     return metadata
 
 
+def development_password_matches(stored):
+    if not stored or stored.startswith(("!", "*")):
+        return False
+    library = ctypes.CDLL("libcrypt.so.1")
+    library.crypt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    library.crypt.restype = ctypes.c_char_p
+    result = library.crypt(b"cloud", stored.encode())
+    return bool(result and hmac.compare_digest(result, stored.encode()))
+
+
+def ssh_settings(text):
+    settings = {}
+    for line in text.splitlines():
+        if " " in line:
+            key, value = line.split(" ", 1)
+            settings[key] = settings[key] + " " + value if key in settings else value
+    return settings
+
+
+def effective_ssh(command="/usr/sbin/sshd", extra=()):
+    # pi-gen removes host keys. Validate with a disposable in-memory key rather
+    # than generating a shared host identity that might leak into an image.
+    key = subprocess.check_output(
+        ["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
+        stderr=subprocess.DEVNULL)
+    fd = os.memfd_create("cloudplay-ssh-validation", os.MFD_CLOEXEC)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(os.dup(fd), "wb") as output:
+            output.write(key)
+        os.lseek(fd, 0, os.SEEK_SET)
+        # sshd closes inherited extra descriptors at startup; open our parent's
+        # still-live descriptor instead, without placing a private key on disk.
+        return ssh_settings(subprocess.check_output(
+            [command, "-T", "-h", f"/proc/{os.getpid()}/fd/{fd}", *extra,
+             "-C", "user=cloud,host=localhost,addr=127.0.0.1"], text=True))
+    finally:
+        os.close(fd)
+
+
 def main():
     import pwd
     installed = subprocess.check_output(
@@ -39,7 +82,7 @@ def main():
                  "rpd-common", "wf-panel-pi", "pcmanfm-pi", "lxpanel", "lxsession",
                  "raspberrypi-ui-mods", "rpi-connect-lite"}
     assert not names & forbidden, f"Desktop/wizard packages installed: {names & forbidden}"
-    required = {"greetd", "labwc", "swaybg", "libpam-systemd", "dbus-user-session",
+    required = {"greetd", "openssh-server", "openssl", "sudo", "labwc", "swaybg", "libpam-systemd", "dbus-user-session",
                 "pipewire", "pipewire-pulse", "wireplumber", "plymouth", "plymouth-themes",
                 "dnsmasq-base", "python3-dbus", "python3-qrcode", "iw", "rfkill",
                 "wpasupplicant", "wireless-regdb"}
@@ -62,7 +105,36 @@ def main():
     assert "pam_systemd.so" in Path("/etc/pam.d/common-session").read_text()
     assert Path("/etc/systemd/system/display-manager.service").resolve().name == "greetd.service"
     assert Path("/etc/systemd/system/default.target").resolve().name == "graphical.target"
-    for service in ("ssh.service", "ssh.socket", "userconfig.service", "getty@.service", "serial-getty@.service"):
+    flag = Path("/etc/cloudplay/development-ssh").read_text().strip()
+    assert flag in ("0", "1")
+    development_ssh = flag == "1"
+    assert not list(Path("/etc/ssh").glob("ssh_host_*_key")), "Image contains a shared SSH host key"
+    keygen = Path("/usr/lib/systemd/system/regenerate_ssh_host_keys.service").read_text()
+    assert "ConditionFirstBoot=yes" in keygen and "ssh-keygen -A" in keygen
+    assert Path("/etc/systemd/system/sysinit.target.wants/regenerate_ssh_host_keys.service").is_symlink()
+    ssh = effective_ssh()
+    assert ssh["permitrootlogin"] == "no"
+    assert {"root", "cloudplay"} <= set(ssh["denyusers"].split())
+    assert ssh["passwordauthentication"] == ("yes" if development_ssh else "no")
+    assert ssh["authenticationmethods"] == "any" and ssh["usepam"] == "yes"
+    if development_ssh:
+        admin = pwd.getpwnam("cloud")
+        assert admin.pw_uid > 1000 and admin.pw_shell == "/bin/bash"
+        assert development_password_matches(shadow["cloud"]), "Public development password mismatch"
+        assert "sudo" in subprocess.check_output(["id", "-nG", "cloud"], text=True).split()
+        sudoers = Path("/etc/sudoers.d/90-cloudplay-development")
+        assert sudoers.read_text().strip() == "cloud ALL=(ALL:ALL) PASSWD: ALL"
+        assert stat.S_IMODE(sudoers.stat().st_mode) == 0o440
+        subprocess.run(["visudo", "-cf", str(sudoers)], check=True)
+        effective_sudo = subprocess.check_output(["sudo", "-l", "-U", "cloud"], text=True)
+        assert "NOPASSWD:" not in effective_sudo and "PASSWD: ALL" in effective_sudo
+        assert subprocess.check_output(["systemctl", "is-enabled", "ssh.service"], text=True).strip() == "enabled"
+    else:
+        assert str(Path("/etc/systemd/system/ssh.service").resolve()) == "/dev/null"
+        assert "cloud" not in shadow or shadow["cloud"].startswith(("!", "*"))
+    for path in ("/etc/cloud/cloud.cfg.d/zz-cloudplay.cfg", "/boot/firmware/user-data"):
+        assert "ssh_pwauth: " + str(development_ssh).lower() in Path(path).read_text()
+    for service in ("ssh.socket", "userconfig.service", "getty@.service", "serial-getty@.service"):
         assert Path("/etc/systemd/system", service).is_symlink()
         assert str(Path("/etc/systemd/system", service).resolve()) == "/dev/null"
     ElementTree.parse("/etc/cloudplay/labwc/rc.xml")
@@ -130,17 +202,28 @@ def main():
         "/etc/systemd/system/cloudplay-wifi-radio.service",
         "/etc/systemd/system/cloudplay-startup.service",
         "/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf",
+        "/usr/local/bin/cloudplay-development-ssh",
+        "/etc/cloudplay/development-ssh", "/etc/ssh/sshd_config.d/00-cloudplay-access.conf",
     ]
     paths += ["/usr/local/lib/cloudplay/onboarding/" + name for name in
               ("network.py", "service.py", "client.py", "readiness.py", "boot.py",
                "setup.html", "setup.js", "setup.css")]
     paths += [str(path) for path in frames]
+    if development_ssh:
+        paths.append("/etc/sudoers.d/90-cloudplay-development")
     for path in paths:
         info = Path(path).stat()
         assert info.st_uid == 0 and not info.st_mode & 0o022, path
     report = {
         "design": "lite-wayland-kiosk", "account": "cloudplay", "uid": 1000,
-        "passwords_locked": True, "ssh_masked": True, "desktop_wizard_absent": True,
+        "browser_and_root_passwords_locked": True, "ssh_masked": not development_ssh,
+        "development_ssh": development_ssh, "root_and_browser_ssh_denied": True,
+        "device_unique_host_keys": "generated on first boot; no private host key in image",
+        "ssh_effective_policy": {key: ssh[key] for key in
+                                 ("permitrootlogin", "denyusers", "passwordauthentication",
+                                  "authenticationmethods", "usepam")},
+        "development_login": "cloud / cloud (public, temporary)" if development_ssh else None,
+        "desktop_wizard_absent": True,
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",

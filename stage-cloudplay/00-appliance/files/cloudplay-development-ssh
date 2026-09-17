@@ -1,0 +1,60 @@
+#!/bin/bash
+# Public preview credentials, deliberately unsuitable for production.
+set -euo pipefail
+[[ "$(id -u)" == 0 ]] || { echo "Run as root" >&2; exit 1; }
+[[ $# == 1 && "$1" =~ ^[01]$ ]] || { echo "Usage: $0 0|1" >&2; exit 2; }
+[[ "$(id -u cloudplay)" == 1000 ]] || exit 1
+enabled="$1"
+install -d -m 755 /etc/cloudplay /etc/ssh/sshd_config.d /etc/sudoers.d
+if [[ "$enabled" == 1 ]]; then
+    if ! id cloud >/dev/null 2>&1; then
+        useradd --create-home --user-group --shell /bin/bash cloud
+    fi
+    [[ "$(id -u cloud)" -gt 1000 ]] || exit 1
+    usermod --append --groups sudo --shell /bin/bash cloud
+    printf 'cloud:cloud\n' | chpasswd
+    printf 'cloud ALL=(ALL:ALL) PASSWD: ALL\n' > /etc/sudoers.d/90-cloudplay-development
+    chmod 440 /etc/sudoers.d/90-cloudplay-development
+    visudo -cf /etc/sudoers.d/90-cloudplay-development
+    password_auth=yes
+else
+    if id cloud >/dev/null 2>&1; then
+        [[ "$(id -u cloud)" -gt 1000 ]] || exit 1
+        usermod --lock --shell /usr/sbin/nologin cloud
+        if id -nG cloud | tr ' ' '\n' | grep -qx sudo; then
+            gpasswd --delete cloud sudo
+        fi
+    fi
+    rm -f /etc/sudoers.d/90-cloudplay-development
+    password_auth=no
+fi
+cat > /etc/ssh/sshd_config.d/00-cloudplay-access.conf <<EOF
+# Temporary development preview. Public login: cloud / cloud.
+PermitRootLogin no
+DenyUsers root cloudplay
+PasswordAuthentication ${password_auth}
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+AuthenticationMethods any
+UsePAM yes
+EOF
+chmod 644 /etc/ssh/sshd_config.d/00-cloudplay-access.conf
+for path in /etc/cloud/cloud.cfg.d/zz-cloudplay.cfg /boot/firmware/user-data; do
+    if [[ -f "$path" ]]; then
+        if [[ "$enabled" == 1 ]]; then value=true; else value=false; fi
+        sed -i "s/^ssh_pwauth:.*/ssh_pwauth: ${value}/" "$path"
+    fi
+done
+printf '%s\n' "$enabled" > /etc/cloudplay/development-ssh
+chmod 644 /etc/cloudplay/development-ssh
+# Do not start/restart anything here: image assembly and operator hotfixes share
+# this helper. The operator controls active sessions and listener restarts.
+if [[ "$enabled" == 1 ]]; then
+    systemctl unmask ssh.service
+    systemctl mask ssh.socket
+    systemctl enable ssh.service
+else
+    systemctl unmask ssh.service
+    systemctl disable ssh.service
+    systemctl mask ssh.service ssh.socket
+fi

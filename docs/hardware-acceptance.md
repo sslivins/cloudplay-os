@@ -47,8 +47,14 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   or Cloudplay settings window appears. Browser login popups still work.
 - Confirm `cloudplay` UID1000 owns the compositor/browser; greetd has opened
   a real seat0/VT7 PAM/logind session and a D-Bus user session exists.
-- Root/cloudplay passwords are locked, cloudplay has no sudo/adm/disk group,
-  no default SSH listener or ordinary getty is active, no shared credentials.
+- Root/cloudplay passwords stay locked; cloudplay has no sudo/adm/disk group
+  and neither account accepts SSH. No ordinary getty is active.
+- Development mode only: `ssh cloud@DEVICE_IP` accepts the explicitly public
+  password `cloud`; `sudo` requires that password. Verify the account differs
+  from browser UID1000, host keys are device-specific, and a reboot/cloud-init
+  does not disable the intended login. Keep this preview on a trusted LAN.
+- With `CLOUDPLAY_DEVELOPMENT_SSH=0`, a fresh image has no development account
+  or SSH listener. Check both modes before removing the temporary exception.
 
 ## Input, network, audio and persistence
 

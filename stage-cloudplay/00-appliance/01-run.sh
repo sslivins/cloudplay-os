@@ -18,6 +18,9 @@ install -m 644 files/cloudplay-network.service files/cloudplay-wifi-radio.servic
     files/cloudplay-startup.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/cloudplay-diagnostics.conf "${ROOTFS_DIR}/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf"
 install -m 755 files/cloudplay-start files/cloudplay-session files/cloudplay-browser-session "${ROOTFS_DIR}/usr/local/bin/"
+install -m 755 files/cloudplay-development-ssh "${ROOTFS_DIR}/usr/local/bin/"
+case "${CLOUDPLAY_DEVELOPMENT_SSH:-1}" in 0|1) ;; *) exit 1 ;; esac
+printf '%s\n' "${CLOUDPLAY_DEVELOPMENT_SSH:-1}" > "${ROOTFS_DIR}/etc/cloudplay/development-ssh"
 install -m 755 "${inputs}/install-extension.py" "${inputs}/supervise.py" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
 install -m 755 "${inputs}/hdr-readiness.py" "${ROOTFS_DIR}/usr/local/bin/cloudplay-hdr-check"
 install -m 644 files/SECURITY.txt "${ROOTFS_DIR}/usr/local/share/cloudplay/"
@@ -44,6 +47,10 @@ install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay \
     /home/cloudplay/.config /home/cloudplay/.config/cloudplay
 install -d -m 2755 -o root -g systemd-journal /var/log/journal
 systemctl mask ssh.service ssh.socket userconfig.service getty@.service serial-getty@.service
+/usr/local/bin/cloudplay-development-ssh "$(cat /etc/cloudplay/development-ssh)"
+# No build-host SSH identity may be shared by flashed devices.
+rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
+systemctl enable regenerate_ssh_host_keys.service
 systemctl enable greetd.service
 systemctl enable cloudplay-network.service cloudplay-wifi-radio.service cloudplay-startup.service
 systemctl set-default graphical.target

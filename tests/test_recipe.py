@@ -239,6 +239,41 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertIn("usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay", stage)
         self.assertNotIn("do_boot_behaviour B4", stage)
         self.assertIn("systemctl mask ssh.service", stage)
+        self.assertIn("export CLOUDPLAY_DEVELOPMENT_SSH=1", config)
+        self.assertIn('/usr/local/bin/cloudplay-development-ssh "$(cat /etc/cloudplay/development-ssh)"', stage)
+
+    def test_preview_ssh_is_separate_password_authenticated_admin_not_browser(self):
+        script = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-development-ssh").read_text()
+        for required in ("PermitRootLogin no", "DenyUsers root cloudplay",
+                         "AuthenticationMethods any", "PermitEmptyPasswords no",
+                         "cloud ALL=(ALL:ALL) PASSWD: ALL", "printf 'cloud:cloud\\n' | chpasswd",
+                         '[[ "$(id -u cloud)" -gt 1000 ]]', "usermod --lock --shell /usr/sbin/nologin cloud",
+                         "systemctl mask ssh.service ssh.socket"):
+            self.assertIn(required, script)
+        self.assertNotIn("NOPASSWD", script)
+        self.assertNotIn("usermod --append --groups sudo cloudplay", script)
+        self.assertNotIn("systemctl restart", script)
+        self.assertNotIn("systemctl start", script)
+        enabled = script.index('if [[ "$enabled" == 1 ]]')
+        self.assertGreater(script.index("useradd --create-home"), enabled)
+        self.assertIn("ssh_pwauth: ${value}", script)
+        packages = (ROOT / "stage-cloudplay/00-appliance/00-packages-nr").read_text().split()
+        self.assertTrue({"openssh-server", "sudo"} <= set(packages))
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        self.assertIn("rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub", stage)
+        self.assertIn("systemctl enable regenerate_ssh_host_keys.service", stage)
+
+    def test_image_staging_includes_new_boot_gate_modules(self):
+        build = (ROOT / "scripts/build-image.sh").read_text()
+        self.assertIn("client.py,readiness.py,boot.py,setup.html", build)
+
+    def test_ssh_effective_config_parser_and_locked_password_handling(self):
+        settings = verifier.ssh_settings(
+            "permitrootlogin no\ndenyusers root\ndenyusers cloudplay\npasswordauthentication yes\n")
+        self.assertEqual(settings["permitrootlogin"], "no")
+        self.assertEqual(set(settings["denyusers"].split()), {"root", "cloudplay"})
+        for stored in ("", "!", "*", "!$y$locked"):
+            self.assertFalse(verifier.development_password_matches(stored))
 
     def test_launcher_security(self):
         launcher = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-start").read_text()

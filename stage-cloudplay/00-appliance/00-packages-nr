@@ -1,4 +1,7 @@
 greetd
+openssh-server
+openssl
+sudo
 labwc
 swaybg
 libpam-systemd

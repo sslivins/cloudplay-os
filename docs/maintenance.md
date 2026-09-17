@@ -141,15 +141,18 @@ when the user approved the supplied preview on 2026-09-16.
 
 Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
 from `file:///boot/firmware` and NetworkManager via netplan. Default `user-data`
-contains `users: []` and disables SSH password login. Default `network-config`
+contains `users: []`; the development-access helper sets `ssh_pwauth: true`
+only when the explicit preview SSH flag is enabled (false otherwise).
+Default `network-config`
 requests Ethernet DHCP. Wi-Fi can be provisioned before first boot using the
 README's network-config example. Skip Imager account/SSH customization; the
 legacy `userconf` route is intentionally removed. Arbitrary replacement
 user-data is privileged physical provisioning, not untrusted kiosk input.
 
-There is no local admin password, general desktop, terminal greeter or settings
+There is no general desktop, terminal greeter or settings
 application beyond network-only onboarding. Offline media maintenance or a separately provisioned trusted
-admin method is required. Protect boot configuration and browser profiles.
+admin method is required when the temporary development login is disabled.
+Protect boot configuration and browser profiles.
 For reflash, boot another root device and have the operator identify/unmount
 the target. Never overwrite mounted/running root storage.
 
@@ -278,21 +281,42 @@ it. There is no configured browser log file or debug listener. Also inspect
 coredump metadata. Do not publish raw cores, NVIDIA profiles, cookies or
 unredacted network credentials.
 
-SSH/gettys are masked and the setup service is loopback-only unless the
-private phone AP is explicitly started. There is no intended general-LAN
-diagnostic retrieval path. Recovery/targeted offline patching is an operator
+The failed historical image masked SSH/gettys; later source now explicitly
+enables development SSH. The setup service remains loopback-only unless the
+private phone AP is explicitly started. Recovery/targeted patching is an operator
 action; keep original files and record patch hashes because a hotfix makes
 the image differ from its shipped provenance. No automatic reflash or rebuild
 is part of this diagnosis.
 
-The operator may separately enable **temporary key-only SSH on the test SD**
-for this recovery, while retaining locked passwords. That is not a production
-default or a new access mechanism in this recipe: SSH remains masked here.
-The normal `cloudplay` account cannot read all system journals; diagnostic SSH
-requires an appropriately authorized account or a deliberate temporary
-`systemd-journal` group grant on that test image. Do not add broad sudo, shared
-passwords or authorized keys to this public recipe. Record and remove temporary
-access changes when testing is complete.
+### Explicit temporary development SSH
+
+The operator subsequently authorized public **`cloud` / `cloud`** SSH credentials
+in GitHub-built previews. `CLOUDPLAY_DEVELOPMENT_SSH=1` is now the deliberate
+development default. A separate UID above1000 owns that login; the browser stays
+UID1000, password-locked, nonadmin and SSH-denied. Root remains locked/SSH-denied.
+`cloud` joins the normal sudo group with an explicit `PASSWD: ALL` rule, never
+`NOPASSWD`. This permits `sudo journalctl` and maintenance with password `cloud`.
+Treat this as public administrative access: trusted development LAN only, no
+Internet exposure, and remove it before production.
+
+The appliance stage runs `cloudplay-development-ssh 0|1` after the ordinary
+pi-gen SSH-disable stage. Its early `00-cloudplay-access.conf` fixes effective
+OpenSSH policy and its cloud-init setting agrees, avoiding first-boot reversal.
+It enables the normal SSH service, not socket activation. Existing operator
+keys are not removed. On a patched test SD, inspect other `AllowUsers` or
+authentication overrides before relying on the new login; verify `cloud` in a
+second connection before ending the existing diagnostic session. The helper
+does not start/restart services or interfere with an in-flight diagnostic.
+
+Set the build flag to0 for a fresh image without the account or listener.
+The runtime disable path locks an existing development account, removes its
+sudo grant and masks SSH startup while preserving home data. It does not revoke
+live sessions or stop a running listener; those are separate operator actions.
+Export checks test the actual password hash with libcrypt (without recording
+the hash), account separation, password-required sudo, effective `sshd -T`
+policy, service enablement/masks, and cloud-init agreement. Earlier image
+artifacts and test-SD-only key access are historical, not proof this revision
+has been built or boot-tested.
 
 ## Browser/extension security debt
 

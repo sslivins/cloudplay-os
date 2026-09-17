@@ -1,5 +1,13 @@
 # Cloudplay OS — direct-to-GeForce-NOW kiosk preview
 
+> **Temporary development SSH is enabled in newly built previews:**
+> username **`cloud`**, password **`cloud`**. This separate administrator uses
+> the same password for standard `sudo`; the browser remains locked-down
+> `cloudplay` UID1000. Root/browser SSH login is denied.
+> **These credentials are public. Use a trusted development LAN only, never
+> expose SSH to the Internet.** This is not a production-ready security default.
+> Source is published; the historical downloadable image below predates this change.
+
 **Known physical-boot failure in image build 35168527444:** the operator
 reported a localhost setup attempt followed by a black screen/cursor. Source
 diagnosis reproduced a NetworkManager startup bug that can wrongly send working
@@ -34,7 +42,8 @@ splash handoff and NVIDIA-login acceptance remain unvalidated.**
 - Raspberry Pi OS **Trixie ARM64**, pi-gen stages **0–2 (Lite)** plus Cloudplay.
   The pinned recipe includes the official 2026-09-15 release baseline.
 - Root and fixed appliance account **`cloudplay` (UID 1000)** have locked
-  passwords. No shared password, first-run user rename or sudo-group membership.
+  passwords. The browser account has no sudo-group membership. The separate
+  temporary `cloud` administrator is the explicit public-password exception.
 - **greetd** opens a distro PAM/login/logind session on VT7 and drops to
   `cloudplay`. Both initial and fallback sessions run the kiosk—not a greeter UI.
   PAM is retained; no `pam_permit` password-authentication workaround is added.
@@ -161,8 +170,9 @@ wifis:
 Use the correct regulatory country and interface name for the device. The
 network file is first-boot provisioning, not a live settings UI. Treat it and
 `user-data` as sensitive/privileged configuration. Imager's legacy `userconf`
-account flow and automatic SSH customization are **not supported**. SSH and
-local getty services are masked by default. Do not ship secrets in this repo.
+account flow and automatic SSH customization are **not supported**. The preview
+recipe supplies its own development SSH policy; local gettys remain masked.
+Do not put private credentials in this repo.
 
 An assigned address is not proof of internet access. No external internet probe
 or CMS gates launch; upstream captive networks or outages can still leave
@@ -173,11 +183,32 @@ Physical first-boot and recovery acceptance remains required.
 
 ## Recovery and storage safety
 
-There is no general desktop, local admin password, recovery partition or OTA.
+There is no general desktop, recovery partition or OTA. During development:
+
+```sh
+ssh cloud@DEVICE_IP
+# Password: cloud
+sudo journalctl -b -t cloudplay-session --no-pager
+# sudo password: cloud
+```
+
+`cloud` is separate from the automatically logged-in browser user. It has
+password-required sudo; root and `cloudplay` cannot log in over SSH. Host keys
+are generated per device by the retained distro/first-boot machinery, not
+committed as shared image keys. Record/verify the host key when connecting.
+
+For a new image without this exception, set **`CLOUDPLAY_DEVELOPMENT_SSH=0`**
+in `config` and rebuild. The recipe then omits the development account, masks
+SSH, and disables password SSH in cloud-init. The installed
+`sudo cloudplay-development-ssh 0` helper also locks an existing `cloud` account,
+removes its sudo grant and masks future SSH startup, but deliberately does not
+stop services or revoke existing sessions; an operator must finish live shutdown
+from trusted access. Do not treat changing the flag alone as production approval.
+
 To reset NVIDIA login, shut the appliance down and remove its browser profile
 from another trusted system, or reflash. This loses saved browser sessions.
-Administrative maintenance requires deliberate offline provisioning or a
-separately configured trusted access method; never enable a common password.
+With development SSH disabled, administrative maintenance requires offline
+provisioning or a separately configured trusted access method.
 
 **Never flash a card containing the running root filesystem.** Boot from a
 different device first, identify the target by serial/capacity, ensure every
