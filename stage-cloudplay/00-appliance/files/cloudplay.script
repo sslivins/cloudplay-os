@@ -1,10 +1,21 @@
-# Approved Cloudplay OS artwork includes the wordmark, startup text and dots.
-# Do not overlay another label or spinner, or require runtime Windows fonts.
+# Cloudplay OS: approved artwork, with its baked footer removed for live status.
 Window.SetBackgroundTopColor(5 / 255, 9 / 255, 16 / 255);
 Window.SetBackgroundBottomColor(5 / 255, 9 / 255, 16 / 255);
-source_image = Image("cloudplay.png");
+source_image = Image("cloudplay-background.png");
 image = source_image;
 sprite = Sprite(image);
+spinner = [];
+scaled_spinner = [];
+for (i = 0; i < 12; i++) {
+    if (i < 10)
+        spinner[i] = Image("spinner-0" + i + ".png");
+    else
+        spinner[i] = Image("spinner-" + i + ".png");
+}
+spinner_sprite = Sprite();
+status_sprite = Sprite();
+status_source = Image.Text("Starting Cloudplay OS", 0.55, 0.68, 0.76, 1, "Sans 16");
+frame = 0;
 screen_width = -1;
 screen_height = -1;
 
@@ -21,9 +32,26 @@ fun refresh() {
             global.image = source_image.Scale(Math.Int(source_image.GetWidth() * scale),
                 Math.Int(source_image.GetHeight() * scale));
         sprite.SetImage(global.image);
+        global.scale = scale;
+        for (i = 0; i < 12; i++)
+            global.scaled_spinner[i] = spinner[i].Scale(Math.Int(40 * scale), Math.Int(40 * scale));
+        global.status_image = status_source.Scale(Math.Int(status_source.GetWidth() * scale),
+            Math.Int(status_source.GetHeight() * scale));
+        status_sprite.SetImage(global.status_image);
     }
-    sprite.SetPosition(Window.GetX() + (Window.GetWidth() - global.image.GetWidth()) / 2,
-        Window.GetY() + (Window.GetHeight() - global.image.GetHeight()) / 2, 0);
+    x = Window.GetX() + (Window.GetWidth() - global.image.GetWidth()) / 2;
+    y = Window.GetY() + (Window.GetHeight() - global.image.GetHeight()) / 2;
+    sprite.SetPosition(x, y, 0);
+    global.frame++;
+    spinner_sprite.SetImage(scaled_spinner[Math.Int(global.frame / 2) % 12]);
+    spinner_sprite.SetPosition(x + 940 * global.scale, y + 846 * global.scale, 1);
+    status_sprite.SetPosition(x + (global.image.GetWidth() - status_image.GetWidth()) / 2,
+        y + 913 * global.scale - status_image.GetHeight() / 2, 1);
+}
+fun display_message(message) {
+    global.status_source = Image.Text(message, 0.55, 0.68, 0.76, 1, "Sans 16");
+    global.screen_width = -1;
 }
 Plymouth.SetRefreshFunction(refresh);
+Plymouth.SetDisplayMessageFunction(display_message);
 refresh();

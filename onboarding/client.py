@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 """Use a separate ephemeral, sandboxed setup browser before the persistent GFN one."""
-import json
-import http.client
 import os
 import shutil
 import signal
 import subprocess
 import threading
 import time
-import urllib.request
 from pathlib import Path
+import readiness
 
 URL = "http://127.0.0.1:8765"
 
 
 def ready():
-    try:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(URL + "/api/status", timeout=2) as response:
-            state = json.load(response)
-            return isinstance(state, dict) and state.get("connected") is True
-    except (OSError, ValueError, http.client.HTTPException):
-        return False
+    state = readiness.status(URL)
+    if state and state["connected"]:
+        return True
+    network = readiness.network_snapshot()
+    return bool(network and network["connected"])
 
 
 def main():
@@ -34,14 +30,11 @@ def main():
     stopping = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: stopping.set())
-    # Let normal saved-network/Ethernet startup win without flashing a setup form.
-    for _ in range(5):
-        if ready() or stopping.wait(1):
-            break
+    mode = readiness.wait_for_mode(stopping)
     profile = runtime / "cloudplay-network-profile"
     child = None
     try:
-        if not ready() and not stopping.is_set():
+        if mode == "setup" and not stopping.is_set():
             if profile.is_symlink():
                 raise SystemExit("Setup profile must not be a symlink")
             if profile.exists():

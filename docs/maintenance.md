@@ -42,23 +42,33 @@ automatic sign-out/profile deletion is performed.
 
 ## Splash and initramfs
 
-The installed `cloudplay` Plymouth script theme displays the 1920×1080 PNG
-approved on 2026-09-16, unchanged. It already contains the wordmark, static dots
-and startup text; no duplicate overlay or spinner is added. Other display
-sizes use centered aspect-preserving scaling, not cropping. The asset checksum
-is tested and recorded with configuration hashes. Rendered text requires no
-Segoe font files or Windows/Pillow runtime in the image; only the PNG is shipped.
+The source `cloudplay` Plymouth theme uses the approved 1920×1080 main artwork,
+with only its baked footer cleared following the operator's physical feedback.
+The new background differs only in the original footer rectangle; the approved
+original is retained. One 12-frame spinner and live network status occupy that
+clear area. Other sizes use centered aspect-preserving scaling, not cropping.
+Asset checksums are tested and recorded with configuration hashes. Runtime text
+uses the installed Plymouth label/font support, not Windows fonts or Pillow.
+`scripts/generate-spinner.py` reproducibly creates the tiny PNG frames using
+only Python's stdlib.
 No uniqueness or trademark clearance is asserted.
 `plymouth-set-default-theme cloudplay` selects it. The recipe adds
 VC4/V3D to initramfs modules, preserves `auto_initramfs=1`, adds `quiet splash`,
 disables the firmware rainbow splash and ordinary console/status banners,
-and overrides Plymouth quit with `--retain-splash`.
+and overrides Plymouth quit with `--retain-splash`. The new startup gate orders
+after cloud-init finalization and the network helper but **before both Plymouth
+quit units and greetd**. It waits up to 30 seconds for actual network readiness
+(40-second unit hard limit), then briefly displays the result. It never keeps
+Plymouth's DRM ownership while labwc starts. The same background is rendered by
+an unprivileged, image-only `swaybg` layer beneath the browser, covering handoff
+and crash-backoff gaps without adding a desktop or interactive GUI.
 
 The distro greetd unit orders after `plymouth-quit-wait.service` and conflicts
 with the VT7 getty. All auto-gettys are masked/disabled, so the handoff cannot
 land at a normal terminal login. The export hook regenerates initramfs, then
 checks that **every** kernel initrd contains the custom theme, script plugin
-and VC4 driver, plus the approved PNG. pi-gen's final export regenerates the same configured initrds;
+and VC4 driver, plus the background, all spinner frames and label plugin.
+pi-gen's final export regenerates the same configured initrds;
 the downloadable image must also be inspected before handoff.
 
 None of these static checks proves that Plymouth renders correctly on a
@@ -200,8 +210,31 @@ complete recovery still requires the next device run. Repeated client exits
 can produce a five-minute supervisor pause after six failures. Look for
 `Cloudplay child exited ...; retry in 300s`, compositor/session exits and
 Chromium stderr. New source-only phase messages distinguish temporary setup
-launch from persistent GFN launch. No browser version/flags, sandbox, artwork
-or persistent NVIDIA profile are changed by this diagnostic fix.
+launch from persistent GFN launch. The core diagnostic fixes change no browser
+version/flags, sandbox or persistent NVIDIA profile.
+
+The subsequent UX fix in `onboarding/readiness.py` distinguishes helper failure
+from actual offline networking. A root-owned `/run/cloudplay-startup/decision.json`
+carries the just-completed boot gate into the user session (60-second validity;
+offline decisions are rechecked). If the helper is delayed or broken, a separate
+read-only `Network.snapshot()` child probes real address readiness with a
+two-second **whole-process** timeout, including D-Bus connection/introspection.
+It never calls `Enable`, `Set`, scan or activation methods. A functioning
+confirmed-offline helper may request OOBE after the grace period; unknown/error
+states fall back to GFN instead of a dead localhost page. If both actual
+networking and setup are broken, that fallback can show GFN's offline page,
+not pretend connectivity succeeded. The new `cloudplay-startup` journal
+identifier records safe boot phases; it does not log addresses or credentials.
+
+The source-only UX validation includes Windows/Linux regressions, actual
+Plymouth 24.004.60 ARM64 parser acceptance (and rejection of an invalid control),
+and native systemd dependency validation against units extracted from the exact
+failed image. The latter uses executable placeholders for path checks, not
+service execution; none of these are a physical boot test. No replacement image
+is built during targeted recovery. Parent/operator installation must include
+the declared `swaybg` dependency, all runtime modules/theme assets, startup-unit
+enablement and regeneration of **every** firmware initramfs; source copies alone
+do not update the early-boot splash.
 
 **The failed boot's journal was volatile and is no longer recoverable after
 reboot.** Although the exact shipped image has `/var/log/journal`

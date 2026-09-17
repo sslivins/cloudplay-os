@@ -1,3 +1,6 @@
 #!/bin/sh
-# The session client is supplied with labwc -S; no desktop autostart is run.
+# Image-only, noninteractive layer beneath Chromium covers compositor handoff
+# and browser restart backoff. No desktop, panel, menu or second browser.
+/usr/bin/swaybg --image /usr/share/plymouth/themes/cloudplay/cloudplay-background.png \
+    --mode fit --color '#050910' &
 exit 0

@@ -39,7 +39,7 @@ def main():
                  "rpd-common", "wf-panel-pi", "pcmanfm-pi", "lxpanel", "lxsession",
                  "raspberrypi-ui-mods", "rpi-connect-lite"}
     assert not names & forbidden, f"Desktop/wizard packages installed: {names & forbidden}"
-    required = {"greetd", "labwc", "libpam-systemd", "dbus-user-session",
+    required = {"greetd", "labwc", "swaybg", "libpam-systemd", "dbus-user-session",
                 "pipewire", "pipewire-pulse", "wireplumber", "plymouth", "plymouth-themes",
                 "dnsmasq-base", "python3-dbus", "python3-qrcode", "iw", "rfkill",
                 "wpasupplicant", "wireless-regdb"}
@@ -83,8 +83,13 @@ def main():
         ["systemd-analyze", "cat-config", "systemd/journald.conf"], text=True))
     assert journal["Storage"] == "persistent", journal
     assert journal["SystemMaxUse"] == "64M" and journal["SyncIntervalSec"] == "15s", journal
-    for unit in ("cloudplay-network.service", "cloudplay-wifi-radio.service"):
+    for unit in ("cloudplay-network.service", "cloudplay-wifi-radio.service",
+                 "cloudplay-startup.service"):
         assert Path("/etc/systemd/system/multi-user.target.wants", unit).is_symlink()
+    startup = Path("/etc/systemd/system/cloudplay-startup.service").read_text()
+    assert "Before=plymouth-quit.service plymouth-quit-wait.service greetd.service" in startup
+    assert "TimeoutStartSec=40" in startup
+    assert "swaybg" in Path("/etc/cloudplay/labwc/autostart").read_text()
     cmdline = Path("/boot/firmware/cmdline.txt").read_text().split()
     assert {"quiet", "splash", "console=tty3", "vt.global_cursor_default=0"} <= set(cmdline)
     assert "console=tty1" not in cmdline
@@ -92,12 +97,21 @@ def main():
     assert subprocess.check_output(["plymouth-set-default-theme"], text=True).strip() == "cloudplay"
     artwork = Path("/usr/share/plymouth/themes/cloudplay/cloudplay.png")
     assert hashlib.sha256(artwork.read_bytes()).hexdigest() == "b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b"
+    theme = artwork.parent
+    assert hashlib.sha256((theme / "cloudplay-background.png").read_bytes()).hexdigest() == "63436f2ffa432dd5461165b47e443c670c60c6968020736d3a4b69ce39257399"
+    assert 'Image("cloudplay-background.png")' in (theme / "cloudplay.script").read_text()
+    frames = [theme / f"spinner-{index:02}.png" for index in range(12)]
+    assert len({hashlib.sha256(path.read_bytes()).digest() for path in frames}) == 12
     initramfs = {}
     for path in sorted(Path("/boot").glob("initrd.img-*")):
         listing = subprocess.check_output(["lsinitramfs", str(path)], text=True)
         assert "usr/share/plymouth/themes/cloudplay/cloudplay.script" in listing, str(path)
         assert "usr/share/plymouth/themes/cloudplay/cloudplay.plymouth" in listing, str(path)
         assert "usr/share/plymouth/themes/cloudplay/cloudplay.png" in listing, str(path)
+        assert "usr/share/plymouth/themes/cloudplay/cloudplay-background.png" in listing, str(path)
+        for frame in frames:
+            assert str(frame).lstrip("/") in listing, str(path)
+        assert re.search(r"/label-pango\.so$", listing, re.MULTILINE), str(path)
         assert re.search(r"/script\.so$", listing, re.MULTILINE), str(path)
         assert re.search(r"/vc4\.ko(?:\.\w+)?$", listing, re.MULTILINE), str(path)
         initramfs[path.name] = {"cloudplay_theme_embedded": True, "script_plugin": True, "vc4_module": True}
@@ -110,13 +124,17 @@ def main():
         "/usr/share/plymouth/themes/cloudplay/cloudplay.script",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.plymouth",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.png",
+        "/usr/share/plymouth/themes/cloudplay/cloudplay-background.png",
         "/boot/firmware/cmdline.txt", "/boot/firmware/config.txt",
         "/etc/systemd/system/cloudplay-network.service",
         "/etc/systemd/system/cloudplay-wifi-radio.service",
+        "/etc/systemd/system/cloudplay-startup.service",
         "/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf",
     ]
     paths += ["/usr/local/lib/cloudplay/onboarding/" + name for name in
-              ("network.py", "service.py", "client.py", "setup.html", "setup.js", "setup.css")]
+              ("network.py", "service.py", "client.py", "readiness.py", "boot.py",
+               "setup.html", "setup.js", "setup.css")]
+    paths += [str(path) for path in frames]
     for path in paths:
         info = Path(path).stat()
         assert info.st_uid == 0 and not info.st_mode & 0o022, path
@@ -126,6 +144,7 @@ def main():
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
+        "startup_gate": "bounded DHCP wait before Plymouth releases DRM; helper failure does not force setup",
         "journal_effective_settings": journal,
         "home_directories": home_metadata,
         "initramfs": initramfs, "boot_validated": False,

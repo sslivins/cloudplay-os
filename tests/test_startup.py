@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "onboarding"))
 import client
 import network
 import service
+import readiness
 
 
 class ManagerError(Exception):
@@ -171,7 +172,7 @@ class BrowserHandoffTest(unittest.TestCase):
         self.runtime.mkdir(parents=True)
         self.addCleanup(shutil.rmtree, self.runtime)
 
-    def run_client(self, readiness, exited=False):
+    def run_client(self, readiness_values, exited=False, mode="setup"):
         event = Mock()
         event.is_set.return_value = False
         event.wait.return_value = False
@@ -196,7 +197,8 @@ class BrowserHandoffTest(unittest.TestCase):
             stack.enter_context(patch.object(client.signal, "SIGHUP", 1, create=True))
             stack.enter_context(patch.object(client.signal, "SIGKILL", 9, create=True))
             stack.enter_context(patch.object(client.time, "sleep"))
-            stack.enter_context(patch.object(client, "ready", side_effect=readiness))
+            stack.enter_context(patch.object(client, "ready", side_effect=readiness_values))
+            stack.enter_context(patch.object(client.readiness, "wait_for_mode", return_value=mode))
             popen = stack.enter_context(patch.object(client.subprocess, "Popen", return_value=child))
             kill = stack.enter_context(patch.object(client.os, "killpg", create=True))
             execute = stack.enter_context(patch.object(client.os, "execv"))
@@ -208,14 +210,14 @@ class BrowserHandoffTest(unittest.TestCase):
         return popen, kill, execute, error
 
     def test_ethernet_fast_path_executes_gfn_without_localhost_browser(self):
-        popen, kill, execute, error = self.run_client([True, True])
+        popen, kill, execute, error = self.run_client([], mode="online")
         self.assertIsNone(error)
         popen.assert_not_called()
         kill.assert_not_called()
         execute.assert_called_once_with("/usr/local/bin/cloudplay-start", ["cloudplay-start"])
 
     def test_setup_ready_terminates_only_owned_browser_then_executes_gfn(self):
-        popen, kill, execute, error = self.run_client([False] * 6 + [True])
+        popen, kill, execute, error = self.run_client([True])
         self.assertIsNone(error)
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
         self.assertEqual(popen.call_args.args[0][-1], "http://127.0.0.1:8765/")
@@ -224,7 +226,7 @@ class BrowserHandoffTest(unittest.TestCase):
         execute.assert_called_once_with("/usr/local/bin/cloudplay-start", ["cloudplay-start"])
 
     def test_setup_browser_exit_returns_failure_to_outer_backoff_not_false_success(self):
-        popen, kill, execute, error = self.run_client([False] * 7, exited=True)
+        popen, kill, execute, error = self.run_client([False], exited=True)
         self.assertEqual(error, 1)
         execute.assert_not_called()
         self.assertFalse((self.runtime / "cloudplay-network-profile").exists())
@@ -242,7 +244,8 @@ class BrowserHandoffTest(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            with patch.object(client, "URL", f"http://127.0.0.1:{server.server_port}"):
+            with patch.object(client, "URL", f"http://127.0.0.1:{server.server_port}"), patch.object(
+                    readiness, "network_snapshot", return_value=None):
                 self.assertFalse(client.ready())
                 self.assertFalse(client.ready())
         finally:
@@ -255,8 +258,103 @@ class BrowserHandoffTest(unittest.TestCase):
     def test_unexpected_json_shape_is_retryable(self):
         opener = Mock()
         opener.open.return_value = io.BytesIO(b"[]")
-        with patch.object(client.urllib.request, "build_opener", return_value=opener):
+        with patch.object(readiness.urllib.request, "build_opener", return_value=opener), patch.object(
+                readiness, "network_snapshot", return_value=None):
             self.assertFalse(client.ready())
+
+    def test_helper_restart_during_setup_does_not_hide_new_ethernet_connection(self):
+        with patch.object(readiness, "status", return_value=None), patch.object(
+                readiness, "network_snapshot", return_value={"connected": True}):
+            self.assertTrue(client.ready())
+
+
+class BootReadinessTest(unittest.TestCase):
+    def test_healthy_ethernet_or_saved_wifi_never_opens_setup(self):
+        for phase in ("checking", "setup", "error"):
+            with self.subTest(phase=phase):
+                self.assertEqual(readiness.choose(
+                    {"connected": False, "phase": phase}, {"connected": True}, False), "online")
+
+    def test_helper_failure_does_not_override_real_address_readiness(self):
+        self.assertEqual(readiness.choose(None, {"connected": True}, False), "online")
+        self.assertEqual(readiness.choose(None, {"connected": False}, True), "online")
+        self.assertEqual(readiness.choose(None, None, True), "online")
+
+    def test_setup_requires_confirmed_offline_helper_and_bounded_grace(self):
+        for wifi in (True, False):
+            offline = {"connected": False, "phase": "setup", "has_wifi": wifi}
+            self.assertIsNone(readiness.choose(offline, {"connected": False}, False))
+            self.assertEqual(readiness.choose(offline, {"connected": False}, True), "setup")
+        for phase in ("checking", "connecting", "error"):
+            self.assertEqual(readiness.choose(
+                {"connected": False, "phase": phase}, {"connected": False}, True), "online")
+
+    def test_delayed_dhcp_waits_without_opening_interactive_page(self):
+        stopping = Mock()
+        stopping.is_set.return_value = False
+        progress = Mock()
+        offline = ({"connected": False, "phase": "setup"}, {"connected": False})
+        with patch.object(readiness, "observe", side_effect=[
+            offline, offline, (None, {"connected": True})
+        ]), patch.object(readiness.time, "monotonic", side_effect=[0, 1, 15, 29]):
+            self.assertEqual(readiness.wait_for_mode(stopping, False, progress), "online")
+        self.assertEqual(stopping.wait.call_count, 2)
+        self.assertIn("Network connected", progress.call_args.args[0])
+
+    def test_offline_timeout_requests_setup_only_after_wait(self):
+        stopping = Mock()
+        stopping.is_set.return_value = False
+        offline = ({"connected": False, "phase": "setup"}, {"connected": False})
+        with patch.object(readiness, "observe", return_value=offline), patch.object(
+                readiness.time, "monotonic", side_effect=[0, 1, 31]):
+            self.assertEqual(readiness.wait_for_mode(stopping, False), "setup")
+        stopping.wait.assert_called_once_with(0.5)
+
+    def test_recent_gate_online_decision_does_not_repeat_wait_or_open_setup(self):
+        stopping = Mock()
+        with patch.object(readiness, "cached_decision", return_value="online"), patch.object(
+                readiness, "observe") as observe:
+            self.assertEqual(readiness.wait_for_mode(stopping), "online")
+        observe.assert_not_called()
+
+    def test_cached_offline_decision_is_rechecked_before_launching_localhost(self):
+        stopping = Mock()
+        stopping.is_set.return_value = False
+        with patch.object(readiness, "cached_decision", return_value="setup"), patch.object(
+                readiness, "observe", return_value=(None, {"connected": True})):
+            self.assertEqual(readiness.wait_for_mode(stopping), "online")
+
+    def test_stale_or_malformed_gate_cache_is_not_authoritative(self):
+        for data in ('[]', '{}', '{"at":"wrong","mode":"setup"}',
+                     '{"at":0,"mode":"setup"}', '{"at":1000,"mode":"setup"}'):
+            with self.subTest(data=data), patch.object(Path, "read_text", return_value=data), patch.object(
+                    readiness.time, "monotonic", return_value=100):
+                self.assertIsNone(readiness.cached_decision())
+
+    def test_status_handles_truncation_and_malformed_json(self):
+        opener = Mock()
+        opener.open.side_effect = http.client.IncompleteRead(b"", 5117)
+        with patch.object(readiness.urllib.request, "build_opener", return_value=opener):
+            self.assertIsNone(readiness.status())
+        for body in (b"[]", b"null", b'{"connected":"false"}', b"{"):
+            opener.open.side_effect = None
+            opener.open.return_value = io.BytesIO(body)
+            with patch.object(readiness.urllib.request, "build_opener", return_value=opener):
+                self.assertIsNone(readiness.status())
+
+    def test_readonly_probe_has_whole_process_timeout_and_never_enables_network(self):
+        with patch.object(readiness.subprocess, "run", side_effect=readiness.subprocess.TimeoutExpired(
+                "probe", 2)) as run:
+            self.assertIsNone(readiness.network_snapshot())
+        self.assertEqual(run.call_args.kwargs["timeout"], 2)
+        net = Mock()
+        net.snapshot.return_value = {"connected": True, "has_wifi": True}
+        with patch.object(network, "Network", return_value=net), contextlib.redirect_stdout(io.StringIO()):
+            readiness.readonly_network()
+        net.snapshot.assert_called_once_with()
+        net.enable.assert_not_called()
+        net.activate.assert_not_called()
+        net.bus.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

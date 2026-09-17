@@ -301,18 +301,43 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertIn("WLR_BACKENDS=headless", export)
         self.assertLess(export.index("mount --bind /dev/shm"), export.index("runuser -u cloudplay"))
 
-    def test_approved_splash_is_unchanged_raster_without_duplicate_overlay(self):
+    def test_approved_art_is_preserved_and_cleared_footer_has_live_spinner(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"
         image = (files / "cloudplay.png").read_bytes()
         self.assertEqual(image[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(struct.unpack(">II", image[16:24]), (1920, 1080))
         self.assertEqual(hashlib.sha256(image).hexdigest(),
                          "b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b")
+        background = (files / "cloudplay-background.png").read_bytes()
+        self.assertEqual(hashlib.sha256(background).hexdigest(),
+                         "63436f2ffa432dd5461165b47e443c670c60c6968020736d3a4b69ce39257399")
+        self.assertEqual(struct.unpack(">II", background[16:24]), (1920, 1080))
         script = (files / "cloudplay.script").read_text()
-        self.assertIn('Image("cloudplay.png")', script)
+        self.assertNotIn(b"\r", (files / "cloudplay.script").read_bytes())
+        self.assertIn('Image("cloudplay-background.png")', script)
+        self.assertNotIn('Image("cloudplay.png")', script)
         self.assertIn("source_image.Scale", script)
-        self.assertNotIn("Image.Text(", script)
-        self.assertNotIn('Image("spinner', script)
+        self.assertIn("Plymouth.SetDisplayMessageFunction(display_message)", script)
+        self.assertIn("global.frame++", script)
+        frames = [path.read_bytes() for path in sorted(files.glob("spinner-*.png"))]
+        self.assertEqual(len(frames), 12)
+        self.assertEqual(len({hashlib.sha256(frame).digest() for frame in frames}), 12)
+        for frame in frames:
+            self.assertEqual(struct.unpack(">II", frame[16:24]), (40, 40))
+
+    def test_network_wait_precedes_plymouth_release_and_compositor_start(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        gate = (files / "cloudplay-startup.service").read_text()
+        self.assertIn("Before=plymouth-quit.service plymouth-quit-wait.service greetd.service", gate)
+        self.assertIn("TimeoutStartSec=40", gate)
+        self.assertIn("RuntimeDirectoryMode=0755", gate)
+        greetd = (files / "greetd-kiosk.conf").read_text()
+        self.assertIn("After=cloud-final.service cloudplay-startup.service plymouth-quit.service", greetd)
+        self.assertIn("Wants=cloud-final.service cloudplay-startup.service plymouth-quit.service", greetd)
+        autostart = (files / "labwc-autostart").read_text()
+        self.assertIn("/usr/bin/swaybg", autostart)
+        self.assertIn("cloudplay-background.png", autostart)
+        self.assertNotIn("http://", autostart)
 
     def test_logging_checks_vendor_dropins_not_just_directory_or_main_file(self):
         main = "[Journal]\n#Storage=auto\n"

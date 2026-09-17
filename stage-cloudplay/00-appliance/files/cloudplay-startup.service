@@ -1,0 +1,26 @@
+[Unit]
+Description=Cloudplay branded network readiness gate
+Wants=cloudplay-network.service cloud-final.service
+After=cloudplay-network.service cloud-final.service plymouth-start.service
+Before=plymouth-quit.service plymouth-quit-wait.service greetd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/cloudplay/onboarding/boot.py
+TimeoutStartSec=40
+TimeoutStopSec=3
+RemainAfterExit=yes
+RuntimeDirectory=cloudplay-startup
+RuntimeDirectoryMode=0755
+UMask=0022
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudplay-startup
+
+[Install]
+WantedBy=multi-user.target

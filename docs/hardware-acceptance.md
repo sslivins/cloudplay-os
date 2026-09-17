@@ -4,8 +4,10 @@ The earlier desktop image was booted and rejected: it exposed Raspberry Pi's
 desktop and OS setup rather than the requested appliance. The **new Lite
 kiosk design is not yet physically boot-validated**. Its first reported boot of
 image `35168527444` failed: a localhost attempt, then black screen with cursor.
-A source-level network-initialization defect is reproduced and fixed in source;
-device-log correlation and black-screen diagnosis remain pending. Record each item below
+Source/image defects in network initialization, truncated HTTP handling and
+home-directory ownership are reproduced and fixed in source. A subsequent
+animated splash/network gate is also source-only until operator testing.
+Complete physical recovery remains unverified. Record each item below
 as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
 The 1920×1080 splash artwork was approved on 2026-09-16. Build `35168527444`
@@ -28,12 +30,17 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   prior media/artifacts. No automatic flashing is included in the build.
 - Cold boot shows **Cloudplay OS** branding, not the stock Pi desktop, rainbow
   screen, account wizard or normal terminal banner.
-- Compare the splash against the approved PNG: no duplicate text/spinner,
+- Compare the main art against the approved PNG: only its baked footer is replaced
+  by one live spinner/status; no duplicate text/spinner,
   native-size appearance at 1080p and no cropping/distortion at other sizes.
 - Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
   from the selected initramfs, hands off to Chromium and has no long black gap.
 - With working networking, Chromium opens fullscreen at
   `https://play.geforcenow.com/`; NVIDIA sign-in is the only requested login.
+  Cold Ethernet and saved-Wi-Fi boots show branding/network progress, then GFN:
+  **no transient interactive setup page or localhost connection error**.
+  Confirm Plymouth releases DRM before labwc and the matching image-only
+  transition layer covers compositor/browser startup and restart backoff.
   If network setup is needed, show only the minimal appliance Wi-Fi flow,
   never a desktop, OS account/password wizard or terminal.
 - No LightDM, graphical/text greeter, taskbar, desktop panel, wallpaper shell
@@ -58,6 +65,10 @@ tier, game and region. Redact credentials, session tokens and public IPs.
 - Test Ethernet connected during setup, delayed DHCP, dropped connectivity
   and power interruption during configuration. Network setup must not require
   a shared administrator password or an unsandboxed/root browser.
+- With healthy Ethernet, restart/fail the setup helper and return truncated
+  status responses: the actual-address fallback must still select GFN.
+  A genuinely offline, functioning helper opens OOBE after the bounded grace;
+  a broken helper never launches its dead localhost URL as a fallback.
 - Verify the setup endpoint is not reachable from another LAN machine;
   the optional phone portal is accessible only over the temporary private AP,
   with a newly generated password shown locally. Test QR joining and Apple,

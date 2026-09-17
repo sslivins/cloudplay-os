@@ -14,7 +14,8 @@ cp -a "${inputs}/." "${ROOTFS_DIR}/opt/cloudplay-build-inputs/"
 cp -a "${inputs}/onboarding" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type d -exec chmod 755 {} +
 find "${ROOTFS_DIR}/usr/local/lib/cloudplay/onboarding" -type f -exec chmod 644 {} +
-install -m 644 files/cloudplay-network.service files/cloudplay-wifi-radio.service "${ROOTFS_DIR}/etc/systemd/system/"
+install -m 644 files/cloudplay-network.service files/cloudplay-wifi-radio.service \
+    files/cloudplay-startup.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/cloudplay-diagnostics.conf "${ROOTFS_DIR}/etc/systemd/journald.conf.d/cloudplay-diagnostics.conf"
 install -m 755 files/cloudplay-start files/cloudplay-session files/cloudplay-browser-session "${ROOTFS_DIR}/usr/local/bin/"
 install -m 755 "${inputs}/install-extension.py" "${inputs}/supervise.py" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
@@ -25,7 +26,8 @@ install -m 644 files/greetd-kiosk.conf "${ROOTFS_DIR}/etc/systemd/system/greetd.
 install -m 644 files/labwc-rc.xml "${ROOTFS_DIR}/etc/cloudplay/labwc/rc.xml"
 install -m 644 files/labwc-menu.xml "${ROOTFS_DIR}/etc/cloudplay/labwc/menu.xml"
 install -m 755 files/labwc-autostart "${ROOTFS_DIR}/etc/cloudplay/labwc/autostart"
-install -m 644 files/cloudplay.plymouth files/cloudplay.script files/cloudplay.png "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay/"
+install -m 644 files/cloudplay.plymouth files/cloudplay.script files/cloudplay.png \
+    files/cloudplay-background.png files/spinner-*.png "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay/"
 install -m 644 files/plymouth-quit.conf "${ROOTFS_DIR}/etc/systemd/system/plymouth-quit.service.d/cloudplay.conf"
 install -m 644 files/cloud-init-kiosk.cfg "${ROOTFS_DIR}/etc/cloud/cloud.cfg.d/zz-cloudplay.cfg"
 install -m 644 files/cloud-init-kiosk.cfg "${ROOTFS_DIR}/boot/firmware/user-data"
@@ -43,7 +45,7 @@ install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay \
 install -d -m 2755 -o root -g systemd-journal /var/log/journal
 systemctl mask ssh.service ssh.socket userconfig.service getty@.service serial-getty@.service
 systemctl enable greetd.service
-systemctl enable cloudplay-network.service cloudplay-wifi-radio.service
+systemctl enable cloudplay-network.service cloudplay-wifi-radio.service cloudplay-startup.service
 systemctl set-default graphical.target
 plymouth-set-default-theme cloudplay
 printf '[Daemon]\nTheme=cloudplay\nShowDelay=0\nDeviceTimeout=10\n' > /etc/plymouth/plymouthd.conf

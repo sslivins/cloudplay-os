@@ -11,7 +11,7 @@ below contains that bug; build/inspection success is not physical acceptance.**
 See [startup diagnostics](docs/maintenance.md#startup-diagnostics-and-known-preview-defect).
 
 **An appliance, not the Raspberry Pi desktop.** Boot is designed to show a
-**Cloudplay OS** splash, start a minimal Wayland session, and immediately open
+**Cloudplay OS** splash with a live spinner while networking starts, then open
 full-screen Chromium at **https://play.geforcenow.com/** for NVIDIA sign-in.
 There is no LightDM, desktop panel, taskbar, wallpaper shell, OS account wizard,
 terminal greeter or Cloudplay settings application.
@@ -55,18 +55,25 @@ splash handoff and NVIDIA-login acceptance remain unvalidated.**
 
 ## Cloudplay splash
 
-A native Plymouth script theme displays the **exact approved raster artwork**:
-cloud/play motif, Cloudplay OS wordmark, tagline, static dots and startup text.
-No second spinner or text is overlaid. It is displayed pixel-for-pixel at
-1920×1080 and proportionally fitted/centered at other sizes without cropping.
-No Windows fonts or Pillow are required to display it. The PNG SHA256 is
-`b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b`.
+A native Plymouth theme preserves the approved cloud/play motif, wordmark and
+tagline. Following physical feedback, the source replaces only the baked footer
+with **one animated spinner and live network status**. The footer-free raster
+differs from the approved original only inside pixels `(876,870)–(1044,927)`;
+its SHA256 is `63436f2ffa432dd5461165b47e443c670c60c6968020736d3a4b69ce39257399`.
+The original approved PNG is retained for provenance. Both are 1920×1080 and
+proportionally fitted without cropping. Runtime requires neither Windows fonts
+nor Pillow; spinner frames are reproducible with stdlib `scripts/generate-spinner.py`.
 The motif is not claimed to be unique or trademark-cleared.
 
 The recipe selects the theme, includes the PNG and VC4 in initramfs, retains Pi's
 `auto_initramfs=1`, adds `quiet splash`, suppresses the firmware rainbow/logo
-and normal console/status output, then retains the splash until greetd/labwc
-take over. Logs remain in the journal rather than a boot terminal.
+and normal console/status output. A bounded 30-second readiness gate runs while
+Plymouth still owns the display: connected Ethernet/saved Wi-Fi proceeds at once,
+with a brief “Network connected” status. Plymouth quits **before** greetd/labwc
+acquires DRM. An unprivileged image-only `swaybg` layer preserves the same branding
+during compositor/browser handoff and crash backoff; it is not a desktop or
+interactive setup page. Its handoff image is static, not a second spinner.
+Logs remain in the journal rather than a boot terminal.
 
 Actual display timing, early-boot flicker, first-boot resize/reboot and handoff
 to Chromium must be checked on hardware. A failed boot can still expose a
@@ -78,6 +85,12 @@ kernel/emergency diagnostic; quiet flags are not a security boundary.
 with an assigned address skips setup and goes to GeForce NOW. On an offline
 boot the source now provides a minimal network page, not a desktop or account
 wizard. It allows saved networks time to reconnect before accepting changes.
+An unavailable, restarting or malformed helper is **not evidence of an offline
+link**: a separately bounded read-only NetworkManager probe checks actual address
+readiness. Setup opens only for a functioning helper in confirmed-offline setup
+state after the grace period. Otherwise the fallback is GeForce NOW, never a
+dead localhost URL. If networking and the helper are both genuinely broken,
+GFN may show its own offline page; diagnostics/recovery are then required.
 NVIDIA remains the only account login.
 
 - Choose the **actual country** where the device is used, select a scanned
@@ -259,7 +272,9 @@ suppressed initramfs updates and missing `/dev/shm` submount in the build chroot
 neither check was bypassed. Necessary browser-window click focus is retained
 without restoring desktop/menu shortcuts.
 
-**Not yet flashed or boot-tested.** Splash appearance/handoff, NVIDIA login,
+**This image was flashed and failed physical startup acceptance.** The source
+fixes and revised spinner/network-gated handoff are not included in that artifact
+and remain under operator-controlled recovery testing. Splash appearance/handoff, NVIDIA login,
 input/audio, networking and session persistence still need the physical
 acceptance matrix. A passing headless compositor check does not validate DRM
 output or this appliance's real boot sequence.
