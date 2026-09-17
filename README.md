@@ -12,14 +12,12 @@ desktop artifacts remain historical only. **The new kiosk boot/UX is not yet
 physically validated.** An image build and static inspection are not a boot
 test. No claim of interactive GFN gameplay, 4K decoding or HDR output is made.
 
-**The 1920×1080 splash preview was approved on 2026-09-16.** The earlier built
-artifact below predates the requested Agora-style Wi-Fi onboarding and approved
-artwork. The next revision retains a minimal appliance network-setup flow when needed,
+**The 1920×1080 splash preview was approved on 2026-09-16.** The current built
+preview includes that exact artwork and Agora-style network onboarding,
 without restoring the Raspberry Pi desktop or OS account wizard. Agora's
-existing network phase is the reference. The adapted flow is now implemented
-and unit-tested in source, **not yet image-built or hardware-validated**.
-The approved image is now integrated unchanged; the refreshed ARM64 build and
-artifact inspection are pending.
+existing network phase is the reference. The refreshed ARM64 image has been
+built, downloaded and independently inspected. **Physical boot, Wi-Fi/AP,
+splash handoff and NVIDIA-login acceptance remain unvalidated.**
 
 ## Boot and runtime
 
@@ -64,7 +62,7 @@ Actual display timing, early-boot flicker, first-boot resize/reboot and handoff
 to Chromium must be checked on hardware. A failed boot can still expose a
 kernel/emergency diagnostic; quiet flags are not a security boundary.
 
-## Appliance network onboarding — next image pending
+## Appliance network onboarding
 
 **Ethernet DHCP is the default.** A connected Ethernet or saved Wi-Fi interface
 with an assigned address skips setup and goes to GeForce NOW. On an offline
@@ -106,8 +104,8 @@ It is not a LAN administration server. Network secrets are not logged.
 This adapts Agora's Ethernet-first/AP/captive-portal/single-radio/retry pattern
 without its CMS adoption, fleet services or framebuffer ownership. See
 [architecture and provenance](docs/maintenance.md#network-provisioning-and-recovery).
-The currently downloadable kiosk artifact predates this implementation.
-Real Wi-Fi, phone captive detection and boot integration remain untested.
+The current build includes this implementation. Real Wi-Fi, phone captive
+detection and boot integration remain untested.
 
 ### Optional boot-partition provisioning
 
@@ -218,20 +216,20 @@ snapshot-pinned: this is auditable, not fully reproducible.
 browser.** Read [maintenance/security](docs/maintenance.md) and the full
 [physical acceptance matrix](docs/hardware-acceptance.md).
 
-## Built kiosk preview
+## Current built kiosk/OOBE preview
 
-[ARM64 build 35164399916](https://github.com/sslivins/cloudplay-os/actions/runs/35164399916)
+[ARM64 build 35168527444](https://github.com/sslivins/cloudplay-os/actions/runs/35168527444)
 completed successfully from clean source
-`9f6170a5717df90ada967a064c514bdfdfe0e608`. Download its
-`cloudplay-os-kiosk-preview-9f6170a5717df90ada967a064c514bdfdfe0e608`
-artifact (ID `10473999322`; expires **2026-09-24 00:02 UTC**).
+`6a04ee16221732bf359ec62caa24bd2ba8e6e81e`. Download its
+`cloudplay-os-kiosk-preview-6a04ee16221732bf359ec62caa24bd2ba8e6e81e`
+artifact (ID `10476231163`; expires **2026-09-24 01:01 UTC**).
 This is an unsigned preview artifact, not a signed/public OS release.
 
-- Image: `image_2026-09-16-cloudplay-os-kiosk-preview.img.xz`
-- Size: **961,407,616 bytes** compressed; **4,261,412,864 bytes** (4,064 MiB)
+- Image: `image_2026-09-17-cloudplay-os-kiosk-preview.img.xz` (UTC build date)
+- Size: **963,115,280 bytes** compressed; **4,269,801,472 bytes** (4,072 MiB)
   uncompressed.
 - SHA256:
-  `8b6ca858f4007489e93ee505c60f29eab0a1313c944e86344e24ed34b14b2aa7`
+  `2d2a1abf18a7ed8d77bf65a61c26c746824d1672bb764a277708e18fd498c18f`
 
 The downloaded image passed SHA256 and xz integrity checks. Independent,
 read-only FAT/ext4 inspection verified the locked UID1000 account, masked
@@ -240,9 +238,13 @@ configuration/extension hashes, four held browser packages, and exact packaged
 Chromium executable SHA256/BuildID. Both **firmware-loaded** `initramfs8` and
 `initramfs_2712` contain the selected Cloudplay theme, script and text plugins,
 fonts, DRM renderer and VC4 module.
+The approved PNG is byte-identical in the repository, root filesystem and
+**both firmware initramfs**. Onboarding services, dependencies, root-only code
+ownership and separate sandboxed setup-profile wiring were also verified.
 
-All 32 recipe tests passed, and the actual image build exercised labwc as
-nonroot with a headless backend. Real builds caught and fixed pi-gen's
+All **60 tests** passed. The actual image build checked its installed Python
+dependencies and systemd units and exercised labwc as nonroot with a headless
+backend. Earlier real builds caught and fixed pi-gen's
 suppressed initramfs updates and missing `/dev/shm` submount in the build chroot;
 neither check was bypassed. Necessary browser-window click focus is retained
 without restoring desktop/menu shortcuts.
@@ -252,7 +254,7 @@ input/audio, networking and session persistence still need the physical
 acceptance matrix. A passing headless compositor check does not validate DRM
 output or this appliance's real boot sequence.
 
-## Historical desktop artifacts — not the kiosk design
+## Historical previews — not the current image
 
 Preserved for traceability, not recommended for the requested appliance UX:
 
@@ -260,10 +262,13 @@ Preserved for traceability, not recommended for the requested appliance UX:
   source `d90abfed4c1e474f3ca85df6d5b0a95db802f55b`.
 - [v0.4.1 desktop run 35151651032](https://github.com/sslivins/cloudplay-os/actions/runs/35151651032),
   source `bd238607643c039838bc5ccec856aaeabbb264f8`.
+- [Pre-onboarding kiosk run 35164399916](https://github.com/sslivins/cloudplay-os/actions/runs/35164399916),
+  source `9f6170a5717df90ada967a064c514bdfdfe0e608`: text-placeholder splash and
+  manual Wi-Fi provisioning only; it lacks the subsequently requested changes.
 
-These 4,600 MiB images retained LightDM and the Pi desktop/wizard. A physical
-boot exposed that design mismatch; static “build passed” evidence did not
-validate the desired UX.
+The first two 4,600 MiB images retained LightDM and the Pi desktop/wizard.
+A physical boot exposed that design mismatch; static “build passed” evidence
+did not validate the desired UX. All earlier artifacts are preserved.
 
 ## License
 

@@ -5,8 +5,9 @@ desktop and OS setup rather than the requested appliance. The **new Lite
 kiosk design is not yet physically boot-validated**. Record each item below
 as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
-The 1920×1080 splash artwork was approved on 2026-09-16. The next revision adds
-that exact PNG and **Agora-style appliance Wi-Fi onboarding**. Earlier kiosk
+The 1920×1080 splash artwork was approved on 2026-09-16. Build `35168527444`
+includes that exact PNG and **Agora-style appliance Wi-Fi onboarding**, and
+has passed download-integrity and independent image inspection. Earlier kiosk
 images predate both refinements; do not treat their placeholder text splash or
 manual `network-config` support as acceptance of those requirements.
 

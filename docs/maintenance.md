@@ -123,8 +123,10 @@ renderer competes with labwc, and no CMS/player/Agora process is controlled.
 Source tests cover state gates, real local HTTP endpoints, Host/Origin/token
 rejection, secret handling, AP lifecycle ordering/cleanup, typed D-Bus settings,
 DHCP checks and profile persistence/deletion boundaries. These do not replace
-actual NetworkManager/Wi-Fi/captive-portal or boot acceptance. The next image
-and actual image inspection are still required. The artwork gate was lifted
+actual NetworkManager/Wi-Fi/captive-portal or boot acceptance. The refreshed
+image has now passed native build/import/unit checks and independent
+filesystem/initramfs inspection (run `35168527444`); hardware acceptance
+is still required. The artwork gate was lifted
 when the user approved the supplied preview on 2026-09-16.
 
 Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
