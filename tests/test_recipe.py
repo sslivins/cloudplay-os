@@ -11,6 +11,7 @@ import tomllib
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree
 
@@ -325,6 +326,24 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertEqual(merged["SystemMaxUse"], "64M")
         # A future later override must remain visible instead of reporting the desired setting.
         self.assertEqual(verifier.effective_journal_settings(main + diagnostics + vendor)["Storage"], "volatile")
+
+    def test_user_config_ancestor_must_be_owned_and_private_not_just_leaf(self):
+        home = ROOT / "build/mock-home"
+        good = SimpleNamespace(st_uid=1000, st_gid=1000, st_mode=0o40700)
+        root_owned = SimpleNamespace(st_uid=0, st_gid=0, st_mode=0o40700)
+        with patch.object(Path, "lstat", autospec=True, return_value=good):
+            metadata = verifier.home_directory_metadata(home, 1000, 1000)
+            self.assertEqual(len(metadata), 3)
+        def shipped_layout(path):
+            return root_owned if path == home / ".config" else good
+        with patch.object(Path, "lstat", autospec=True, side_effect=shipped_layout):
+            with self.assertRaisesRegex(AssertionError, "config"):
+                verifier.home_directory_metadata(home, 1000, 1000)
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        self.assertIn("/home/cloudplay/.config /home/cloudplay/.config/cloudplay", stage)
+        export = (ROOT / "scripts/export-manifest.sh").read_text()
+        self.assertIn("runuser -u cloudplay -- python3", export)
+        self.assertIn(".cloudplay-build-write-check", export)
 
     def test_network_provisioning_does_not_create_owner_password(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"

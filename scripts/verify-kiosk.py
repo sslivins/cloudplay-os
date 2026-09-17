@@ -3,6 +3,7 @@
 import hashlib
 import json
 import configparser
+import stat
 import re
 import subprocess
 import tomllib
@@ -15,6 +16,17 @@ def effective_journal_settings(text):
     config.optionxform = str
     config.read_string(text)
     return dict(config["Journal"])
+
+
+def home_directory_metadata(home, uid, gid):
+    metadata = {}
+    for path in (home, home / ".config", home / ".config/cloudplay"):
+        info = path.lstat()
+        assert stat.S_ISDIR(info.st_mode), path
+        assert info.st_uid == uid and info.st_gid == gid, path
+        assert stat.S_IMODE(info.st_mode) == 0o700, path
+        metadata[str(path)] = {"uid": uid, "gid": gid, "mode": "0700"}
+    return metadata
 
 
 def main():
@@ -34,6 +46,7 @@ def main():
     assert required <= names, f"Missing kiosk packages: {required - names}"
     account = pwd.getpwnam("cloudplay")
     assert account.pw_uid == 1000 and account.pw_shell == "/bin/bash"
+    home_metadata = home_directory_metadata(Path(account.pw_dir), account.pw_uid, account.pw_gid)
     shadow = {line.split(":")[0]: line.split(":")[1] for line in Path("/etc/shadow").read_text().splitlines()}
     assert all(shadow[name].startswith(("!", "*")) for name in ("root", "cloudplay"))
     assert "rpi-first-boot-wizard" not in shadow
@@ -114,6 +127,7 @@ def main():
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "journal_effective_settings": journal,
+        "home_directories": home_metadata,
         "initramfs": initramfs, "boot_validated": False,
         "configuration_sha256": {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
     }

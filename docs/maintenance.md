@@ -175,7 +175,28 @@ SSIDs, passwords or exception messages are logged. A class-only message on a
 test SD may still be the original service; compare installed hashes with the
 coordinated hotfix manifest before concluding the corrected source failed.
 
-The **black-screen cause remains unconfirmed**. Repeated browser/client exits
+Subsequent live evidence established two additional concrete failure paths:
+
+- `ready()` received `http.client.IncompleteRead(0 bytes read, 5117 more
+  expected)` when the restarting helper closed an HTTP response. That exception
+  is an `HTTPException`, not either of the previously caught `OSError` or
+  `ValueError`. It escaped the client, whose cleanup killed its setup browser.
+  Real local HTTP reproduced the exact failure against shipped source; the
+  fix treats incomplete/protocol-failed replies as retryable and validates the
+  JSON shape rather than terminating the client.
+- The exact shipped image has `/home/cloudplay/.config` owned by **root:root,
+  mode0700**, although its home and `.config/cloudplay` leaf belong to UID1000.
+  GNU `install -d` assigned the requested owner only to the final leaf, leaving
+  the created parent owned by the build user; pi-gen's final export then
+  `chmod 700` on that parent. This blocks UID1000 traversal and matches the live
+  systemd-user permission errors, also preventing browser configuration/profile
+  setup. The recipe now explicitly owns all three directories, verifies their
+  UID/GID/modes, and performs write probes as the actual appliance user.
+  Recovery needs only a verified **nonrecursive** ownership repair of the
+  `.config` ancestor; preserve its contents and the NVIDIA profile.
+
+These are proven source/image defects and explain observed failure paths;
+complete recovery still requires the next device run. Repeated client exits
 can produce a five-minute supervisor pause after six failures. Look for
 `Cloudplay child exited ...; retry in 300s`, compositor/session exits and
 Chromium stderr. New source-only phase messages distinguish temporary setup

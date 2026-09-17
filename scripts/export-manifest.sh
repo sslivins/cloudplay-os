@@ -15,6 +15,16 @@ python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/onboardi
 systemd-analyze verify --man=no /etc/systemd/system/cloudplay-network.service \
     /etc/systemd/system/cloudplay-wifi-radio.service
 runuser -u cloudplay -- test -w /dev/shm
+runuser -u cloudplay -- python3 -B - <<'PY'
+import os
+from pathlib import Path
+for directory in (Path("/home/cloudplay"), Path("/home/cloudplay/.config"),
+                  Path("/home/cloudplay/.config/cloudplay")):
+    probe = directory / ".cloudplay-build-write-check"
+    fd = os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
+    probe.unlink()
+PY
 install -d -m 700 -o cloudplay -g cloudplay /run/cloudplay-config-check
 runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
     WLR_BACKENDS=headless WLR_RENDERER=pixman \

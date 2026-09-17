@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Use a separate ephemeral, sandboxed setup browser before the persistent GFN one."""
 import json
+import http.client
 import os
 import shutil
 import signal
@@ -17,8 +18,9 @@ def ready():
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(URL + "/api/status", timeout=2) as response:
-            return json.load(response).get("connected") is True
-    except (OSError, ValueError):
+            state = json.load(response)
+            return isinstance(state, dict) and state.get("connected") is True
+    except (OSError, ValueError, http.client.HTTPException):
         return False
 
 

@@ -3,8 +3,10 @@
 **Known physical-boot failure in image build 35168527444:** the operator
 reported a localhost setup attempt followed by a black screen/cursor. Source
 diagnosis reproduced a NetworkManager startup bug that can wrongly send working
-Ethernet to setup; a surgical source fix is under recovery validation. The
-black-screen cause still needs the device journal. **The downloadable image
+Ethernet to setup. Live traces also exposed an uncaught truncated-HTTP response
+that kills the setup client, and image inspection proved a root-owned private
+`.config` ancestor blocks user services/browser storage. Targeted fixes are
+under recovery validation. **The downloadable image
 below contains that bug; build/inspection success is not physical acceptance.**
 See [startup diagnostics](docs/maintenance.md#startup-diagnostics-and-known-preview-defect).
 

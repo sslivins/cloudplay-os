@@ -1,8 +1,11 @@
 import contextlib
 import io
 import json
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import shutil
 import sys
+import threading
 import unittest
 import uuid
 from pathlib import Path
@@ -225,6 +228,35 @@ class BrowserHandoffTest(unittest.TestCase):
         self.assertEqual(error, 1)
         execute.assert_not_called()
         self.assertFalse((self.runtime / "cloudplay-network-profile").exists())
+
+    def test_truncated_real_http_response_is_retryable_not_client_termination(self):
+        class Truncated(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "5117")
+                self.end_headers()
+                self.close_connection = True
+            def log_message(self, *_):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Truncated)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.object(client, "URL", f"http://127.0.0.1:{server.server_port}"):
+                self.assertFalse(client.ready())
+                self.assertFalse(client.ready())
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+        self.assertFalse(issubclass(http.client.IncompleteRead, OSError))
+        self.assertFalse(issubclass(http.client.IncompleteRead, ValueError))
+
+    def test_unexpected_json_shape_is_retryable(self):
+        opener = Mock()
+        opener.open.return_value = io.BytesIO(b"[]")
+        with patch.object(client.urllib.request, "build_opener", return_value=opener):
+            self.assertFalse(client.ready())
 
 
 if __name__ == "__main__":

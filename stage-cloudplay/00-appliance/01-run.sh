@@ -38,9 +38,9 @@ apt-get install --no-install-recommends --allow-downgrades -y /opt/cloudplay-bui
 apt-mark hold chromium chromium-common chromium-sandbox chromium-l10n
 usermod --password '*' --shell /bin/bash --groups audio,video,render,input cloudplay
 usermod --password '*' root
-chmod 700 /home/cloudplay
+install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay \
+    /home/cloudplay/.config /home/cloudplay/.config/cloudplay
 install -d -m 2755 -o root -g systemd-journal /var/log/journal
-install -d -m 700 -o cloudplay -g cloudplay /home/cloudplay/.config/cloudplay
 systemctl mask ssh.service ssh.socket userconfig.service getty@.service serial-getty@.service
 systemctl enable greetd.service
 systemctl enable cloudplay-network.service cloudplay-wifi-radio.service
