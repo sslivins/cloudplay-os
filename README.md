@@ -12,6 +12,14 @@ desktop artifacts remain historical only. **The new kiosk boot/UX is not yet
 physically validated.** An image build and static inspection are not a boot
 test. No claim of interactive GFN gameplay, 4K decoding or HDR output is made.
 
+**Next revision is awaiting splash-preview approval.** The current built
+artifact below predates the requested Agora-style Wi-Fi onboarding. Its text
+splash is an implementation placeholder, not approved final artwork. The next
+revision must retain a minimal appliance network-setup flow when needed,
+without restoring the Raspberry Pi desktop or OS account wizard. Agora's
+existing implementation is the reference; this flow is not implemented here
+yet. No final-artwork update or new image build should precede preview approval.
+
 ## Boot and runtime
 
 - Raspberry Pi OS **Trixie ARM64**, pi-gen stages **0–2 (Lite)** plus Cloudplay.
@@ -51,8 +59,16 @@ kernel/emergency diagnostic; quiet flags are not a security boundary.
 
 ## Networking and first boot
 
+The instructions in this section describe the **currently built artifact**.
+The requested next revision adds on-device appliance Wi-Fi onboarding; manual
+boot-partition provisioning must not be its only Wi-Fi setup path.
+
 **Ethernet DHCP is the default.** The only normal on-screen login should be
 NVIDIA's own web flow. Connect a supported keyboard/controller/mouse as needed.
+
+Standard Raspberry Pi 5 has onboard dual-band Wi-Fi. Compute Module 5 wireless
+is optional; **Lite means no eMMC**, not no Wi-Fi. Identify the actual module
+and available interfaces rather than inferring wireless support from “Lite.”
 
 Use Raspberry Pi Imager's **custom-image** option, but **skip OS customization**
 that creates/renames accounts or enables SSH. The kiosk needs the fixed account,

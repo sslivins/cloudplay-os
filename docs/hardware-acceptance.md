@@ -5,6 +5,11 @@ desktop and OS setup rather than the requested appliance. The **new Lite
 kiosk design is not yet physically boot-validated**. Record each item below
 as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
+The next revision additionally requires **approved splash artwork** and
+**Agora-style appliance Wi-Fi onboarding**. The presently built kiosk image
+predates both refinements; do not treat its placeholder text splash or manual
+`network-config` support as acceptance of those requirements.
+
 Record image SHA256/source commit, build-manifest/kiosk-verification reports,
 actual kernel/Mesa/labwc versions, board (including CM5 versus Pi5), RAM, boot
 media serial, power/cooling, peripherals, monitor/EDID, cable/port, GFN account
@@ -21,8 +26,10 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   screen, account wizard or normal terminal banner.
 - Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
   from the selected initramfs, hands off to Chromium and has no long black gap.
-- Without manual OS interaction, Chromium opens fullscreen at
+- With working networking, Chromium opens fullscreen at
   `https://play.geforcenow.com/`; NVIDIA sign-in is the only requested login.
+  If network setup is needed, show only the minimal appliance Wi-Fi flow,
+  never a desktop, OS account/password wizard or terminal.
 - No LightDM, graphical/text greeter, taskbar, desktop panel, wallpaper shell
   or Cloudplay settings window appears. Browser login popups still work.
 - Confirm `cloudplay` UID1000 owns the compositor/browser; greetd has opened
@@ -33,7 +40,21 @@ tier, game and region. Redact credentials, session tokens and public IPs.
 ## Input, network, audio and persistence
 
 - Ethernet DHCP works with a fresh card. The browser does not wait for a
-  setup wizard. Complete real NVIDIA and optional federated/2FA login flows.
+  network wizard when already connected. Complete real NVIDIA and optional
+  federated/2FA login flows.
+- On a fresh wireless-capable board without Ethernet, the appliance onboarding
+  can list networks, accept credentials, report a wrong password and retry,
+  then hand off to GeForce NOW. Test hidden SSIDs and the correct regulatory
+  country. Saved networking survives reboot without rerunning onboarding.
+- Test standard Pi5 onboard Wi-Fi and, separately, a CM5 configuration with
+  no wireless interface: no endless scan/spinner or false “wrong password.”
+  CM5 Lite denotes absence of eMMC, not absence of wireless.
+- Test Ethernet connected during setup, delayed DHCP, dropped connectivity
+  and power interruption during configuration. Network setup must not require
+  a shared administrator password or an unsandboxed/root browser.
+- Verify the local setup endpoint is not reachable from another LAN machine;
+  NVIDIA cookies are not exposed to the setup service, and Wi-Fi credentials
+  do not appear in logs, URLs, command-line arguments or saved browser forms.
 - Repeat with first-boot `network-config` Wi-Fi provisioning and correct
   regulatory domain. Test no-network boot, later network recovery and reload.
   Imager account-renaming/SSH customization is not supported.
