@@ -104,8 +104,9 @@ session client. `tests/test_launcher.py` covers IPC, lifecycle and input logic.
 On Linux, `CLOUDPLAY_SYSTEMD_TEST=1 python3 -m unittest discover -s tests -p
 'test_launcher.py'` additionally tests real user-cgroup cleanup with a uniquely
 named synthetic unit. This does not prove Pi seat focus, controller mappings,
-login persistence with providers or gameplay. Both service flows require the
-hardware acceptance checklist; Xbox remains unvalidated on Pi.
+login persistence with providers or gameplay. The Main Menu, GFN and Xbox entry
+points, and Ctrl+Alt+Home confirmation have been exercised on CM5 hardware;
+the remaining service flows still require the hardware acceptance checklist.
 
 ## Splash and initramfs
 

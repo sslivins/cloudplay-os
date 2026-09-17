@@ -23,6 +23,7 @@ mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-ma
 mkdir -p build/pi-gen/cloudplay-inputs/onboarding
 mkdir -p build/pi-gen/cloudplay-inputs/launcher
 cp launcher/{main.py,host.py,gamepad.py} build/pi-gen/cloudplay-inputs/launcher/
+cp -a launcher/assets build/pi-gen/cloudplay-inputs/launcher/
 cp onboarding/{network.py,service.py,client.py,readiness.py,boot.py,setup.html,setup.js,setup.css} \
     build/pi-gen/cloudplay-inputs/onboarding/
 cp manifest.json scripts/install-extension.py scripts/package-manifest.py scripts/hdr-readiness.py \

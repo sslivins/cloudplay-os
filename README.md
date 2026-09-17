@@ -7,8 +7,9 @@ Chromium; there is no desktop or operating-system account wizard.
 **The linked preview boots directly to GeForce NOW.** Current source builds add
 **Cloudplay Home**, a controller-friendly menu for **GeForce NOW** and
 **Xbox Cloud Gaming**, plus return-to-Home controls. These additions are not
-included in that preview and still require Pi hardware acceptance. Xbox is an
-**unvalidated Pi entry point**, not a claim of working sign-in or gameplay.
+included in that preview. The menu, both provider entry points and keyboard
+return flow have been exercised on CM5 test hardware; broader gameplay,
+controller, network and display acceptance remains in progress.
 
 It uses [Chromium with Raspberry Pi HEVC support](https://github.com/sslivins/chromium-rpi-hevc)
 and the [GeForce NOW compatibility extension](https://github.com/sslivins/gfn-pi-compat).
@@ -42,7 +43,7 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
 5. With networking available, the linked preview opens GeForce NOW directly. Sign in to
    NVIDIA and choose a game. Keep a keyboard and mouse available for sign-in.
 
-### Cloudplay Home (source builds)
+### Cloudplay OS Main Menu (source builds)
 
 Choose a service using the D-pad and A, or keyboard arrows/Tab and Enter.
 Keep a keyboard and mouse available for sign-in and unsupported controllers.
@@ -50,8 +51,9 @@ The following controls are not present in the linked GeForce NOW preview.
 
 From any service page—including browser error pages—press **Ctrl+Alt+Home**
 (then release), or hold **Select/Back + Start/Menu together for two seconds**.
-A native confirmation offers **Stay in service**, **Reload service**, and
-**Return Home**; Stay is selected first. B or Escape cancels.
+A native confirmation offers **Return to _provider_**, **Reload _provider_**,
+and **Cloudplay OS Main Menu**; returning to the provider is selected first.
+B or Escape cancels.
 
 Returning Home **stops the entire streaming browser**, not just its visible tab.
 Reload also closes and reopens the service, so either action may end your game.

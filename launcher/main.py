@@ -9,6 +9,17 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 
+LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
+RETURN_ICONS = {
+    "keyboard": Path(__file__).with_name("assets") / "keyboard-icon.png",
+    "controller": Path(__file__).with_name("assets") / "controller-icon.png",
+}
+
+
+def action_labels(service):
+    name = SERVICES[service][0]
+    return ("Return to " + name, "Reload " + name, "Cloudplay OS Main Menu")
+
 
 def main():
     import pwd
@@ -39,22 +50,116 @@ def run(browser, control, pads):
     os.environ["GDK_BACKEND"] = "wayland"
     import gi
     gi.require_version("Gtk", "3.0")
-    from gi.repository import Gdk, GLib, Gtk
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
     window = Gtk.Window(title="Cloudplay Home")
     window.set_wmclass("cloudplay-home", "Cloudplay Home")
     window.fullscreen()
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
     box.set_halign(Gtk.Align.CENTER)
     box.set_valign(Gtk.Align.CENTER)
-    box.set_border_width(48)
+    box.set_border_width(56)
     window.add(box)
     css = Gtk.CssProvider()
     css.load_from_data(b"""
-        window { background: #101b2b; color: #f1f5ff; }
-        label { font-size: 22px; }
-        button { font-size: 28px; padding: 22px 48px; border: 4px solid transparent; }
-        button:focus { border-color: #66d6ef; background: #244b69; color: white; }
+        window {
+            background: #050910;
+            color: #eef7ff;
+        }
+        image.brand-logo {
+            margin-bottom: 4px;
+        }
+        label.page-title {
+            color: #f5fbff;
+            font-size: 31px;
+            font-weight: bold;
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+        label.status {
+            color: #b9d3df;
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+        button {
+            color: #eef7ff;
+            background: #112235;
+            border: 3px solid #29435a;
+            border-radius: 16px;
+            padding: 18px 28px;
+        }
+        button:hover {
+            background: #183149;
+        }
+        button:focus {
+            color: white;
+            background: #1d4058;
+            border-color: #66dfe6;
+            box-shadow: 0 0 0 3px rgba(102, 223, 230, 0.25);
+        }
+        button.service-card {
+            min-width: 720px;
+            min-height: 88px;
+            padding: 14px 24px;
+        }
+        button.gfn-card {
+            border-left: 8px solid #76b900;
+        }
+        button.xbox-card {
+            border-left: 8px solid #107c10;
+        }
+        label.service-badge {
+            color: white;
+            background: #25445a;
+            border-radius: 12px;
+            font-size: 22px;
+            font-weight: bold;
+            min-width: 72px;
+            min-height: 54px;
+            padding: 10px;
+        }
+        label.gfn-badge {
+            background: #76b900;
+            color: #071005;
+        }
+        label.xbox-badge {
+            background: #107c10;
+        }
+        label.service-name {
+            color: white;
+            font-size: 27px;
+            font-weight: bold;
+        }
+        label.service-detail {
+            color: #9eb8c8;
+            font-size: 16px;
+        }
+        label.chevron {
+            color: #66dfe6;
+            font-size: 34px;
+            font-weight: bold;
+        }
+        button.action {
+            min-width: 620px;
+            min-height: 48px;
+            font-size: 23px;
+        }
+        button.main-menu {
+            border-color: #3b7582;
+        }
+        box.return-help {
+            margin-top: 18px;
+            padding: 7px;
+        }
+        image.return-icon {
+            min-width: 80px;
+            min-height: 50px;
+        }
+        label.return-text {
+            color: #adc4d1;
+            font-size: 17px;
+        }
     """)
     Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -64,22 +169,95 @@ def run(browser, control, pads):
     closing = False
     next_check = 0
 
-    def show(title, choices, note):
+    def style(widget, *names):
+        context = widget.get_style_context()
+        for name in names:
+            context.add_class(name)
+        return widget
+
+    def add_brand():
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+            str(LOGO), 520, 220, True)
+        box.pack_start(style(Gtk.Image.new_from_pixbuf(pixbuf), "brand-logo"),
+                       False, False, 0)
+
+    def service_button(service, action):
+        name = SERVICES[service][0]
+        button = style(Gtk.Button(), "service-card", service + "-card")
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
+        badge = style(Gtk.Label(label="GFN" if service == "gfn" else "X"),
+                      "service-badge", service + "-badge")
+        row.pack_start(badge, False, False, 0)
+        labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        labels.set_valign(Gtk.Align.CENTER)
+        name_label = style(Gtk.Label(label=name), "service-name")
+        name_label.set_xalign(0)
+        detail = style(Gtk.Label(label="NVIDIA cloud gaming" if service == "gfn"
+                                 else "Xbox games from the cloud"), "service-detail")
+        detail.set_xalign(0)
+        labels.pack_start(name_label, False, False, 0)
+        labels.pack_start(detail, False, False, 0)
+        row.pack_start(labels, True, True, 0)
+        row.pack_end(style(Gtk.Label(label=">"), "chevron"), False, False, 0)
+        button.add(row)
+        button.connect("clicked", lambda _: action())
+        return button
+
+    def action_button(label, action, icon=None, main_menu=False):
+        button = style(Gtk.Button(), "action")
+        if main_menu:
+            style(button, "main-menu")
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        if icon:
+            row.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR),
+                           False, False, 0)
+        text = Gtk.Label(label=label)
+        text.set_xalign(0)
+        row.pack_start(text, True, True, 0)
+        button.add(row)
+        button.connect("clicked", lambda _: action())
+        return button
+
+    def add_return_help():
+        for icon, text in (
+                ("keyboard",
+                 "Press Ctrl + Alt + Home to return to this menu"),
+                ("controller",
+                 "Hold Select/Back + Start/Menu for two seconds to return to this menu")):
+            row = style(Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14),
+                        "return-help")
+            row.set_halign(Gtk.Align.CENTER)
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(RETURN_ICONS[icon]), 80, 50, True)
+            row.pack_start(style(Gtk.Image.new_from_pixbuf(pixbuf), "return-icon"),
+                           False, False, 0)
+            row.pack_start(style(Gtk.Label(label=text), "return-text"), False, False, 0)
+            box.pack_start(row, False, False, 0)
+
+    def show(title, choices, note="", services=False, return_help=False):
         for child in box.get_children():
             box.remove(child)
             child.destroy()
         buttons.clear()
-        box.pack_start(Gtk.Label(label=title), False, False, 0)
-        for label, action in choices:
-            button = Gtk.Button(label=label)
-            button.connect("clicked", lambda _, action=action: action())
+        add_brand()
+        box.pack_start(style(Gtk.Label(label=title), "page-title"), False, False, 0)
+        if note:
+            status = style(Gtk.Label(label=note), "status")
+            status.set_line_wrap(True)
+            status.set_max_width_chars(72)
+            status.set_justify(Gtk.Justification.CENTER)
+            box.pack_start(status, False, False, 0)
+        for choice in choices:
+            if services:
+                service, action = choice
+                button = service_button(service, action)
+            else:
+                label, action, icon, main_menu = choice
+                button = action_button(label, action, icon, main_menu)
             box.pack_start(button, False, False, 0)
             buttons.append(button)
-        label = Gtk.Label(label=note)
-        label.set_line_wrap(True)
-        label.set_max_width_chars(68)
-        label.set_justify(Gtk.Justification.CENTER)
-        box.pack_start(label, False, False, 0)
+        if return_help:
+            add_return_help()
         # Remapping creates a newly focused native view, even over a fullscreen
         # service/error page. Never rely on JavaScript or focus inside Chromium.
         window.hide()
@@ -95,23 +273,22 @@ def run(browser, control, pads):
         except (OSError, RuntimeError, subprocess.SubprocessError):
             confirming = True
             recovering = True
-            show("Unable to close the streaming browser", [("Retry Return Home", home)],
-                 "Home will not open until the browser has stopped. Login data is kept.")
+            show("Streaming browser did not close",
+                 [("Try Again", home, "view-refresh-symbolic", False)],
+                 "Cloudplay OS must close it safely before returning to the Main Menu.")
             return
         confirming = False
         recovering = False
-        show("Cloudplay Home",
-             [(name, lambda service=service: launch(service))
-              for service, (name, _, _) in SERVICES.items()],
-             note or "D-pad + A to choose · Tab/arrows + Enter\n"
-             "In a service: Ctrl+Alt+Home or hold Select/Back + Start/Menu for 2 seconds.")
+        show("MAIN MENU",
+             [(service, lambda service=service: launch(service)) for service in SERVICES],
+             note, services=True, return_help=True)
 
     def launch(service):
         nonlocal confirming
         try:
             browser.start(service)
         except (OSError, RuntimeError, subprocess.SubprocessError):
-            home("Could not open the service. Try again; login data has been kept.")
+            home(SERVICES[service][0] + " could not be opened. Your sign-in is still saved.")
             return
         confirming = False
         window.hide()
@@ -137,10 +314,11 @@ def run(browser, control, pads):
         if confirming:
             return
         confirming = True
-        show("Leave or reload " + SERVICES[browser.service][0] + "?",
-             [("Stay in service", stay), ("Reload service", reload), ("Return Home", home)],
-             "Returning Home closes the streaming browser. Reload restarts the service.\n"
-             "Either may end your game; sign-in data is kept. B / Escape: stay.")
+        return_label, reload_label, home_label = action_labels(browser.service)
+        show(SERVICES[browser.service][0],
+             [(return_label, stay, "go-previous-symbolic", False),
+              (reload_label, reload, "view-refresh-symbolic", False),
+              (home_label, home, "go-home-symbolic", True)])
 
     def navigate(action):
         if action == "home":
@@ -175,9 +353,9 @@ def run(browser, control, pads):
             next_check = time.monotonic() + 1
             try:
                 if browser.exited():
-                    home("The service browser closed. Choose a service to reopen it.")
+                    home("The streaming service closed. Choose where to play.")
             except (OSError, RuntimeError, subprocess.SubprocessError):
-                home("Service supervision was interrupted. Choose a service to reopen it.")
+                home("The streaming session ended unexpectedly. Choose where to play.")
         if control.poll():
             ask_home()
         for action in pads.poll(window.get_visible()):

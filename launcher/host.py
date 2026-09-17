@@ -8,8 +8,7 @@ from pathlib import Path
 
 SERVICES = {
     "gfn": ("GeForce NOW", "https://play.geforcenow.com/", "chromium-profile"),
-    "xbox": ("Xbox Cloud Gaming (unvalidated on Pi)", "https://www.xbox.com/play",
-             "xbox-profile"),
+    "xbox": ("Xbox Cloud Gaming", "https://www.xbox.com/play", "xbox-profile"),
 }
 
 

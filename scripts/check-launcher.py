@@ -68,16 +68,19 @@ def drive():
     try:
         window, = [w for w in Gtk.Window.list_toplevels() if w.get_title() == "Cloudplay Home"]
         children = window.get_child().get_children()
-        title = children[0].get_text()
+        titles = [w.get_text() for w in children if isinstance(w, Gtk.Label)]
+        title = next((text for text in titles if text in (
+            "MAIN MENU", "GeForce NOW", "Xbox Cloud Gaming",
+            "Streaming browser did not close")), "")
         buttons = [w for w in children if isinstance(w, Gtk.Button)]
         if step == 0:
-            assert title == "Cloudplay Home" and len(buttons) == 2
+            assert title == "MAIN MENU" and len(buttons) == 2
             assert window.get_mapped()
             buttons[0].clicked()
             assert browser.service == "gfn" and not window.get_visible()
             control.pending = True
         elif step == 1:
-            assert title.startswith("Leave or reload") and window.get_mapped()
+            assert title == "GeForce NOW" and window.get_mapped()
             assert window.get_focus() == buttons[0]
             assert browser.service == "gfn" and browser.stops == 2
             buttons[0].clicked()  # Default is Stay, never an accidental leave.
@@ -94,7 +97,7 @@ def drive():
             assert browser.service == "gfn" and window.get_visible()
             pads.actions = ["back"]  # Stop failure must not be dismissible to an empty screen.
         elif step == 4:
-            assert title == "Unable to close the streaming browser" and len(buttons) == 1
+            assert title == "Streaming browser did not close" and len(buttons) == 1
             assert window.get_visible()
             browser.fail_stop = False
             buttons[0].clicked()
@@ -104,14 +107,14 @@ def drive():
             assert browser.service == "xbox" and not window.get_visible()
             pads.actions = ["home"]
         elif step == 6:
-            assert title.startswith("Leave or reload Xbox")
+            assert title == "Xbox Cloud Gaming"
             assert browser.service == "xbox" and window.get_visible()
             pads.actions = ["back"]
         elif step == 7:
             assert not window.get_visible() and browser.service == "xbox"
             browser.crashed = True
         elif step == 8:
-            if title != "Cloudplay Home":
+            if title != "MAIN MENU":
                 return True
             assert browser.service is None and window.get_visible()
             done = True

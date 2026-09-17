@@ -93,13 +93,20 @@ tier, game and region. Redact credentials, session tokens and public IPs.
 - Test monitor unplug/replug, mode changes and power loss. No claim of
   flicker-free handoff or reliable recovery until these tests pass.
 
-## Home and service switching (not yet accepted on Pi)
+## Home and service switching
+
+CM5 testing on September 17, 2026 passed boot to the branded Main Menu, GFN and
+Xbox entry-point launch, repeated return to the menu with Ctrl+Alt+Home, and the
+service-specific confirmation UI. The launcher was first tested from the built
+image and then hot-patched with the reviewed visual assets. This is partial
+acceptance only; the unchecked controller, gameplay, error-page and persistence
+cases below remain required for a release image.
 
 - Boot online and after network setup: Home is the first interactive service
   screen. Navigate with keyboard, mouse and each supported wired/Bluetooth pad.
 - Launch GFN and Xbox independently. Preserve the pre-existing NVIDIA profile;
   verify each login survives Home/reopen and reboot without cross-profile data.
-  Xbox sign-in, service compatibility and gameplay are separate unvalidated gates.
+  Xbox gameplay and long-running service compatibility remain separate gates.
 - In each service, test Ctrl+Alt+Home and the two-second Select+Start hold on
   login popups, active playback, pointer-locked games, DNS/offline errors and
   browser-generated certificate/error pages (never bypass certificate checks).

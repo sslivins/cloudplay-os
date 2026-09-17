@@ -162,6 +162,9 @@ def main():
     assert "lxsession" not in Path("/etc/cloudplay/labwc/autostart").read_text()
     launcher = Path("/usr/local/bin/cloudplay-start").read_text()
     assert "launcher/main.py" in launcher
+    for name in ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png"):
+        asset = Path("/usr/local/lib/cloudplay/launcher/assets", name)
+        assert asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     launcher = Path("/usr/local/lib/cloudplay/launcher/host.py").read_text()
     assert "--kiosk" in launcher and "https://play.geforcenow.com/" in launcher
     assert "https://www.xbox.com/play" in launcher and "chromium-profile" in launcher
@@ -245,6 +248,8 @@ def main():
                "setup.html", "setup.js", "setup.css")]
     paths += ["/usr/local/lib/cloudplay/launcher/" + name for name in
               ("main.py", "host.py", "gamepad.py")]
+    paths += ["/usr/local/lib/cloudplay/launcher/assets/" + name for name in
+              ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png")]
     paths += [str(path) for path in frames]
     if development_ssh:
         paths.append("/etc/sudoers.d/90-cloudplay-development")
@@ -266,7 +271,7 @@ def main():
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "home": "native GTK Wayland; owner-only Unix control; fixed per-service user cgroup",
         "home_ui_smoke": home_smoke,
-        "services": {"gfn": "existing persistent profile", "xbox": "separate profile; unvalidated on Pi"},
+        "services": {"gfn": "existing persistent profile", "xbox": "separate persistent profile"},
         "controller": "up to four classified non-keyboard gamepads; Select+Start hold 2s",
         "startup_gate": "bounded DHCP wait before Plymouth releases DRM; helper failure does not force setup",
         "boot_order": boot_order,

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "launcher"))
 import host
 import gamepad
+import main
 
 
 class BrowserTest(unittest.TestCase):
@@ -38,6 +39,7 @@ class BrowserTest(unittest.TestCase):
         self.assertEqual(cookies.read_bytes(), b"existing-profile-fixture")
         self.assertEqual(gfn[-1], "https://play.geforcenow.com/")
         self.assertEqual(xbox[-1], "https://www.xbox.com/play")
+        self.assertEqual(host.SERVICES["xbox"][0], "Xbox Cloud Gaming")
         self.assertIn("--user-data-dir=" + str(profile), gfn)
         self.assertIn("--user-data-dir=" + str(self.work / "xbox-profile"), xbox)
         self.assertIn("--load-extension=/opt/gfn-pi-compat", gfn)
@@ -49,6 +51,13 @@ class BrowserTest(unittest.TestCase):
         for invalid in ("https://example.com", "gfn --no-sandbox", "shell", "../gfn"):
             with self.assertRaises(KeyError):
                 host.browser_command(invalid, self.work)
+
+    def test_service_specific_recovery_labels(self):
+        self.assertEqual(main.action_labels("gfn"), (
+            "Return to GeForce NOW", "Reload GeForce NOW", "Cloudplay OS Main Menu"))
+        self.assertEqual(main.action_labels("xbox"), (
+            "Return to Xbox Cloud Gaming", "Reload Xbox Cloud Gaming",
+            "Cloudplay OS Main Menu"))
 
     @unittest.skipIf(os.name == "nt", "Unix profile permissions")
     def test_private_profile_rejects_symlink_and_preserves_target(self):
@@ -349,6 +358,7 @@ class LauncherWiringTest(unittest.TestCase):
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         verifier = (ROOT / "scripts/verify-kiosk.py").read_text()
         self.assertIn("launcher/{main.py,host.py,gamepad.py}", build)
+        self.assertIn("cp -a launcher/assets", build)
         self.assertIn('cp -a "${inputs}/launcher"', stage)
         for file in ("main.py", "host.py", "gamepad.py"):
             self.assertIn('"' + file + '"', verifier)
@@ -356,6 +366,10 @@ class LauncherWiringTest(unittest.TestCase):
         self.assertIn("71-cloudplay-gamepad.rules", stage)
         self.assertIn('"input"', verifier)
         self.assertIn("cloudplay-gamepad", verifier)
+        for name in ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png"):
+            self.assertIn('"' + name + '"', verifier)
+            asset = ROOT / "launcher/assets" / name
+            self.assertTrue(asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
         export = (ROOT / "scripts/export-manifest.sh").read_text()
         self.assertIn("check-launcher.py", export)
         self.assertIn("test -f /run/cloudplay-config-check/home-smoke.json", export)
