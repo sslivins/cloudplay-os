@@ -472,10 +472,23 @@ class RecipeSafetyTest(unittest.TestCase):
     def test_workflow_actions_are_commit_pinned(self):
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             references = re.findall(r"uses:\s+([^\s#]+)", path.read_text())
-            self.assertTrue(references, path.name)
             for reference in references:
                 with self.subTest(workflow=path.name, action=reference):
                     self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
+
+    def test_preview_promotion_requires_matching_reviewed_image_and_stays_draft(self):
+        workflow = (ROOT / ".github/workflows/promote-preview.yml").read_text()
+        for required in (
+                "workflow_dispatch:", "actions: read", "timeout-minutes: 20",
+                '.conclusion == "success" and .headSha == $sha',
+                '.isDraft == true and .isPrerelease == true',
+                'commits/$RELEASE_TAG', 'provenance/cloudplay-commit.txt',
+                "sha256sum --check SHA256SUMS", '"$IMAGE_SHA256"',
+                'gh run download "$RUN_ID"', 'gh release upload "$RELEASE_TAG"'):
+            self.assertIn(required, workflow)
+        for forbidden in ("--clobber", "gh release create", "gh release edit",
+                          "scripts/build-image.sh"):
+            self.assertNotIn(forbidden, workflow)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,16 @@
 # Kiosk architecture, maintenance and trust
 
+## Publishing an existing beta image
+
+Create a reviewed draft prerelease on a tag pointing to the exact image source,
+not an unrelated newer commit. Run **Attach an existing preview to a draft beta**
+with the successful build run ID, source commit, beta tag and independently
+reviewed compressed-image SHA-256. It transfers the original artifact within
+GitHub without rebuilding, checks the source/checksum, and refuses to overwrite
+an existing asset. Review the attached image, checksum, provenance and release
+notes before publishing the draft. New source features must not be advertised
+as included in an older image.
+
 ## Lite boot architecture
 
 The recipe uses only pi-gen stages 0–2 plus Cloudplay, with no stage3 desktop metapackages.
