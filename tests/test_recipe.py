@@ -484,7 +484,9 @@ class RecipeSafetyTest(unittest.TestCase):
                 '.isDraft == true and .isPrerelease == true',
                 'commits/$RELEASE_TAG', 'provenance/cloudplay-commit.txt',
                 "sha256sum --check SHA256SUMS", '"$IMAGE_SHA256"',
-                'gh run download "$RUN_ID"', 'gh release upload "$RELEASE_TAG"'):
+                'gh run download "$RUN_ID"', "curl --config - --http1.1",
+                "--max-time 900", "--speed-limit 1024 --speed-time 90",
+                '.state == "uploaded" and .digest == $digest'):
             self.assertIn(required, workflow)
         for forbidden in ("--clobber", "gh release create", "gh release edit",
                           "scripts/build-image.sh"):

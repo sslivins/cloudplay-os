@@ -65,5 +65,20 @@ jobs:
           images=(image_*.img.xz)
           [[ ${#images[@]} == 1 ]]
           printf '%s  %s\n' "$IMAGE_SHA256" "${images[0]}" | sha256sum --check -
-          # Never overwrite an existing asset or publish the draft automatically.
-          gh release upload "$RELEASE_TAG" "${images[0]}"
+          [[ "${images[0]}" =~ ^image_[0-9A-Za-z._-]+\.img\.xz$ ]]
+          release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          # Stream large uploads with HTTP/1.1 and explicit timeout/stall limits.
+          # REST rejects duplicate names; never overwrite or publish the draft.
+          printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" |
+            curl --config - --http1.1 --request POST \
+              --header 'Content-Type: application/octet-stream' \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' --header 'Expect:' \
+              --fail-with-body --silent --show-error \
+              --connect-timeout 20 --max-time 900 --speed-limit 1024 --speed-time 90 \
+              --upload-file "${images[0]}" --output uploaded-asset.json \
+              --write-out 'Image upload HTTP %{http_code}; bytes %{size_upload}; seconds %{time_total}\n' \
+              "https://uploads.github.com/repos/$GH_REPO/releases/$release_id/assets?name=${images[0]}"
+          jq -e --arg digest "sha256:$IMAGE_SHA256" \
+            '.state == "uploaded" and .digest == $digest' uploaded-asset.json
