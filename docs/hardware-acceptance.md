@@ -5,10 +5,10 @@ desktop and OS setup rather than the requested appliance. The **new Lite
 kiosk design is not yet physically boot-validated**. Record each item below
 as not-run/pass/fail with timestamp and evidence, never infer UX from green CI.
 
-The next revision additionally requires **approved splash artwork** and
-**Agora-style appliance Wi-Fi onboarding**. The presently built kiosk image
-predates both refinements; do not treat its placeholder text splash or manual
-`network-config` support as acceptance of those requirements.
+The 1920×1080 splash artwork was approved on 2026-09-16. The next revision adds
+that exact PNG and **Agora-style appliance Wi-Fi onboarding**. Earlier kiosk
+images predate both refinements; do not treat their placeholder text splash or
+manual `network-config` support as acceptance of those requirements.
 
 Record image SHA256/source commit, build-manifest/kiosk-verification reports,
 actual kernel/Mesa/labwc versions, board (including CM5 versus Pi5), RAM, boot
@@ -24,6 +24,8 @@ tier, game and region. Redact credentials, session tokens and public IPs.
   prior media/artifacts. No automatic flashing is included in the build.
 - Cold boot shows **Cloudplay OS** branding, not the stock Pi desktop, rainbow
   screen, account wizard or normal terminal banner.
+- Compare the splash against the approved PNG: no duplicate text/spinner,
+  native-size appearance at 1080p and no cropping/distortion at other sizes.
 - Check first-boot filesystem resize/reboot and subsequent boots. Theme appears
   from the selected initramfs, hands off to Chromium and has no long black gap.
 - With working networking, Chromium opens fullscreen at

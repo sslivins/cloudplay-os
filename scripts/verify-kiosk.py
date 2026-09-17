@@ -61,11 +61,14 @@ def main():
     assert "console=tty1" not in cmdline
     assert "auto_initramfs=1" in Path("/boot/firmware/config.txt").read_text()
     assert subprocess.check_output(["plymouth-set-default-theme"], text=True).strip() == "cloudplay"
+    artwork = Path("/usr/share/plymouth/themes/cloudplay/cloudplay.png")
+    assert hashlib.sha256(artwork.read_bytes()).hexdigest() == "b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b"
     initramfs = {}
     for path in sorted(Path("/boot").glob("initrd.img-*")):
         listing = subprocess.check_output(["lsinitramfs", str(path)], text=True)
         assert "usr/share/plymouth/themes/cloudplay/cloudplay.script" in listing, str(path)
         assert "usr/share/plymouth/themes/cloudplay/cloudplay.plymouth" in listing, str(path)
+        assert "usr/share/plymouth/themes/cloudplay/cloudplay.png" in listing, str(path)
         assert re.search(r"/script\.so$", listing, re.MULTILINE), str(path)
         assert re.search(r"/vc4\.ko(?:\.\w+)?$", listing, re.MULTILINE), str(path)
         initramfs[path.name] = {"cloudplay_theme_embedded": True, "script_plugin": True, "vc4_module": True}
@@ -77,6 +80,7 @@ def main():
         "/usr/local/bin/cloudplay-browser-session", "/usr/local/lib/cloudplay/supervise.py",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.script",
         "/usr/share/plymouth/themes/cloudplay/cloudplay.plymouth",
+        "/usr/share/plymouth/themes/cloudplay/cloudplay.png",
         "/boot/firmware/cmdline.txt", "/boot/firmware/config.txt",
         "/etc/systemd/system/cloudplay-network.service",
         "/etc/systemd/system/cloudplay-wifi-radio.service",

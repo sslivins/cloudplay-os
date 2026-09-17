@@ -5,6 +5,7 @@ import io
 import json
 import re
 import shutil
+import struct
 import tarfile
 import tomllib
 import unittest
@@ -297,6 +298,19 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertIn("runuser -u cloudplay", export)
         self.assertIn("WLR_BACKENDS=headless", export)
         self.assertLess(export.index("mount --bind /dev/shm"), export.index("runuser -u cloudplay"))
+
+    def test_approved_splash_is_unchanged_raster_without_duplicate_overlay(self):
+        files = ROOT / "stage-cloudplay/00-appliance/files"
+        image = (files / "cloudplay.png").read_bytes()
+        self.assertEqual(image[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", image[16:24]), (1920, 1080))
+        self.assertEqual(hashlib.sha256(image).hexdigest(),
+                         "b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b")
+        script = (files / "cloudplay.script").read_text()
+        self.assertIn('Image("cloudplay.png")', script)
+        self.assertIn("source_image.Scale", script)
+        self.assertNotIn("Image.Text(", script)
+        self.assertNotIn('Image("spinner', script)
 
     def test_network_provisioning_does_not_create_owner_password(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"

@@ -42,8 +42,14 @@ automatic sign-out/profile deletion is performed.
 
 ## Splash and initramfs
 
-The installed `cloudplay` Plymouth script theme uses text sprites and a dark
-background. `plymouth-set-default-theme cloudplay` selects it. The recipe adds
+The installed `cloudplay` Plymouth script theme displays the 1920×1080 PNG
+approved on 2026-09-16, unchanged. It already contains the wordmark, static dots
+and startup text; no duplicate overlay or spinner is added. Other display
+sizes use centered aspect-preserving scaling, not cropping. The asset checksum
+is tested and recorded with configuration hashes. Rendered text requires no
+Segoe font files or Windows/Pillow runtime in the image; only the PNG is shipped.
+No uniqueness or trademark clearance is asserted.
+`plymouth-set-default-theme cloudplay` selects it. The recipe adds
 VC4/V3D to initramfs modules, preserves `auto_initramfs=1`, adds `quiet splash`,
 disables the firmware rainbow splash and ordinary console/status banners,
 and overrides Plymouth quit with `--retain-splash`.
@@ -52,7 +58,7 @@ The distro greetd unit orders after `plymouth-quit-wait.service` and conflicts
 with the VT7 getty. All auto-gettys are masked/disabled, so the handoff cannot
 land at a normal terminal login. The export hook regenerates initramfs, then
 checks that **every** kernel initrd contains the custom theme, script plugin
-and VC4 driver. pi-gen's final export regenerates the same configured initrds;
+and VC4 driver, plus the approved PNG. pi-gen's final export regenerates the same configured initrds;
 the downloadable image must also be inspected before handoff.
 
 None of these static checks proves that Plymouth renders correctly on a
@@ -118,7 +124,8 @@ Source tests cover state gates, real local HTTP endpoints, Host/Origin/token
 rejection, secret handling, AP lifecycle ordering/cleanup, typed D-Bus settings,
 DHCP checks and profile persistence/deletion boundaries. These do not replace
 actual NetworkManager/Wi-Fi/captive-portal or boot acceptance. The next image
-and final splash changes remain gated on the user's artwork-preview approval.
+and actual image inspection are still required. The artwork gate was lifted
+when the user approved the supplied preview on 2026-09-16.
 
 Retain `cloud-init` and `rpi-cloud-init-mods`: the latter configures NoCloud
 from `file:///boot/firmware` and NetworkManager via netplan. Default `user-data`

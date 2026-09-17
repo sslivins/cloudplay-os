@@ -12,14 +12,14 @@ desktop artifacts remain historical only. **The new kiosk boot/UX is not yet
 physically validated.** An image build and static inspection are not a boot
 test. No claim of interactive GFN gameplay, 4K decoding or HDR output is made.
 
-**Next revision is awaiting splash-preview approval.** The current built
-artifact below predates the requested Agora-style Wi-Fi onboarding. Its text
-splash is an implementation placeholder, not approved final artwork. The next
-revision retains a minimal appliance network-setup flow when needed,
+**The 1920×1080 splash preview was approved on 2026-09-16.** The earlier built
+artifact below predates the requested Agora-style Wi-Fi onboarding and approved
+artwork. The next revision retains a minimal appliance network-setup flow when needed,
 without restoring the Raspberry Pi desktop or OS account wizard. Agora's
 existing network phase is the reference. The adapted flow is now implemented
 and unit-tested in source, **not yet image-built or hardware-validated**.
-No final-artwork update or new image build should precede preview approval.
+The approved image is now integrated unchanged; the refreshed ARM64 build and
+artifact inspection are pending.
 
 ## Boot and runtime
 
@@ -47,9 +47,15 @@ No final-artwork update or new image build should precede preview approval.
 
 ## Cloudplay splash
 
-A native Plymouth script theme draws **Cloudplay OS** and “Starting your cloud
-gaming session” on a dark background without external binary artwork. The
-recipe selects the theme, includes it and VC4 in initramfs, retains Pi's
+A native Plymouth script theme displays the **exact approved raster artwork**:
+cloud/play motif, Cloudplay OS wordmark, tagline, static dots and startup text.
+No second spinner or text is overlaid. It is displayed pixel-for-pixel at
+1920×1080 and proportionally fitted/centered at other sizes without cropping.
+No Windows fonts or Pillow are required to display it. The PNG SHA256 is
+`b2d7338996250ec4f9a34a8534d8bb9d04da7fa5e6305e431633fb184b57ae0b`.
+The motif is not claimed to be unique or trademark-cleared.
+
+The recipe selects the theme, includes the PNG and VC4 in initramfs, retains Pi's
 `auto_initramfs=1`, adds `quiet splash`, suppresses the firmware rainbow/logo
 and normal console/status output, then retains the splash until greetd/labwc
 take over. Logs remain in the journal rather than a boot terminal.

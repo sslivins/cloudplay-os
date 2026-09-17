@@ -1,15 +1,29 @@
-Window.SetBackgroundTopColor(0.025, 0.035, 0.07);
-Window.SetBackgroundBottomColor(0.025, 0.035, 0.07);
-title_image = Image.Text("Cloudplay OS", 0.94, 0.97, 1, 1, "Sans 42");
-subtitle_image = Image.Text("Starting your cloud gaming session", 0.42, 0.76, 0.94, 1, "Sans 16");
-title = Sprite(title_image);
-subtitle = Sprite(subtitle_image);
+# Approved Cloudplay OS artwork includes the wordmark, startup text and dots.
+# Do not overlay another label or spinner, or require runtime Windows fonts.
+Window.SetBackgroundTopColor(5 / 255, 9 / 255, 16 / 255);
+Window.SetBackgroundBottomColor(5 / 255, 9 / 255, 16 / 255);
+source_image = Image("cloudplay.png");
+image = source_image;
+sprite = Sprite(image);
+screen_width = -1;
+screen_height = -1;
 
 fun refresh() {
-    title.SetPosition(Window.GetX() + (Window.GetWidth() - title_image.GetWidth()) / 2,
-        Window.GetY() + Window.GetHeight() / 2 - title_image.GetHeight(), 10);
-    subtitle.SetPosition(Window.GetX() + (Window.GetWidth() - subtitle_image.GetWidth()) / 2,
-        Window.GetY() + Window.GetHeight() / 2 + 22, 10);
+    if (Window.GetWidth() != global.screen_width || Window.GetHeight() != global.screen_height) {
+        global.screen_width = Window.GetWidth();
+        global.screen_height = Window.GetHeight();
+        scale = global.screen_width / source_image.GetWidth();
+        if (global.screen_height / source_image.GetHeight() < scale)
+            scale = global.screen_height / source_image.GetHeight();
+        if (scale == 1)
+            global.image = source_image;
+        else
+            global.image = source_image.Scale(Math.Int(source_image.GetWidth() * scale),
+                Math.Int(source_image.GetHeight() * scale));
+        sprite.SetImage(global.image);
+    }
+    sprite.SetPosition(Window.GetX() + (Window.GetWidth() - global.image.GetWidth()) / 2,
+        Window.GetY() + (Window.GetHeight() - global.image.GetHeight()) / 2, 0);
 }
 Plymouth.SetRefreshFunction(refresh);
 refresh();

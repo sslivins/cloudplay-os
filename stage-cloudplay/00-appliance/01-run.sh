@@ -23,7 +23,7 @@ install -m 644 files/greetd-kiosk.conf "${ROOTFS_DIR}/etc/systemd/system/greetd.
 install -m 644 files/labwc-rc.xml "${ROOTFS_DIR}/etc/cloudplay/labwc/rc.xml"
 install -m 644 files/labwc-menu.xml "${ROOTFS_DIR}/etc/cloudplay/labwc/menu.xml"
 install -m 755 files/labwc-autostart "${ROOTFS_DIR}/etc/cloudplay/labwc/autostart"
-install -m 644 files/cloudplay.plymouth files/cloudplay.script "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay/"
+install -m 644 files/cloudplay.plymouth files/cloudplay.script files/cloudplay.png "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay/"
 install -m 644 files/plymouth-quit.conf "${ROOTFS_DIR}/etc/systemd/system/plymouth-quit.service.d/cloudplay.conf"
 install -m 644 files/cloud-init-kiosk.cfg "${ROOTFS_DIR}/etc/cloud/cloud.cfg.d/zz-cloudplay.cfg"
 install -m 644 files/cloud-init-kiosk.cfg "${ROOTFS_DIR}/boot/firmware/user-data"
