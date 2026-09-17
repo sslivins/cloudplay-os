@@ -2,7 +2,7 @@
 """Fail the image export if the kiosk becomes a desktop or loses its boot wiring."""
 import hashlib
 import json
-import pwd
+import configparser
 import re
 import subprocess
 import tomllib
@@ -10,7 +10,15 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 
+def effective_journal_settings(text):
+    config = configparser.ConfigParser(strict=False, interpolation=None)
+    config.optionxform = str
+    config.read_string(text)
+    return dict(config["Journal"])
+
+
 def main():
+    import pwd
     installed = subprocess.check_output(
         ["dpkg-query", "-W", "-f=${binary:Package}\t${db:Status-Status}\n"], text=True)
     names = {line.split("\t")[0].split(":")[0] for line in installed.splitlines()
@@ -58,6 +66,10 @@ def main():
     for setting in ("Storage=persistent", "SystemMaxUse=64M", "SyncIntervalSec=15s"):
         assert setting in diagnostics
     assert Path("/var/log/journal").is_dir()
+    journal = effective_journal_settings(subprocess.check_output(
+        ["systemd-analyze", "cat-config", "systemd/journald.conf"], text=True))
+    assert journal["Storage"] == "persistent", journal
+    assert journal["SystemMaxUse"] == "64M" and journal["SyncIntervalSec"] == "15s", journal
     for unit in ("cloudplay-network.service", "cloudplay-wifi-radio.service"):
         assert Path("/etc/systemd/system/multi-user.target.wants", unit).is_symlink()
     cmdline = Path("/boot/firmware/cmdline.txt").read_text().split()
@@ -101,6 +113,7 @@ def main():
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
         "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
+        "journal_effective_settings": journal,
         "initramfs": initramfs, "boot_validated": False,
         "configuration_sha256": {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
     }

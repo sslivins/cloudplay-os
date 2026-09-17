@@ -174,9 +174,15 @@ Chromium stderr. New source-only phase messages distinguish temporary setup
 launch from persistent GFN launch. No browser version/flags, sandbox, artwork
 or persistent NVIDIA profile are changed by this diagnostic fix.
 
-The exact shipped image has `/var/log/journal` (root:systemd-journal, mode2755)
-and journald's default `Storage=auto`, so persistent journal storage is
-expected. The last unsynced tail can still be lost after abrupt power removal.
+**The failed boot's journal was volatile and is no longer recoverable after
+reboot.** Although the exact shipped image has `/var/log/journal`
+(root:systemd-journal, mode2755) and a commented `Storage=auto` in the main
+configuration, its vendor drop-in
+`/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf` sets
+`Storage=volatile`. The operator confirmed an empty journal directory on the
+recovered SD. The earlier inference from only the directory/main file was
+incorrect; all configuration directories must be merged.
+
 The tightly coupled diagnostic update makes persistence explicit, caps system
 journals at 64 MiB (retaining 128 MiB free), caps runtime logs at 16 MiB and
 syncs every 15 seconds with seven-day retention. This reduces, not eliminates,
@@ -184,6 +190,14 @@ the loss risk on power failure; prefer an orderly shutdown or `journalctl --sync
 when recovery access is available. It does not send logs to the boot console.
 The helper explicitly uses journal stdout/stderr with identifier
 `cloudplay-network`; browser/session output keeps `cloudplay-session`.
+The v2 filename `cloudplay-diagnostics.conf` sorts after the vendor's
+`40-rpi-volatile-storage.conf`; the later `syslog.conf` changes only forwarding,
+not storage. `systemd-analyze --root=... cat-config systemd/journald.conf`
+against the extracted shipped configuration proved **volatile before the
+patch and persistent afterward**, with the 15-second sync and 64 MiB cap.
+The image verifier now asserts the effective merged settings, not merely
+the presence of the desired file or directory.
+
 After the operator boots separate storage and mounts the SD root **read-only**,
 inspect, for example:
 

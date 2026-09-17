@@ -28,6 +28,7 @@ artifacts = load("artifacts", "artifacts.py")
 installer = load("installer", "install-extension.py")
 hdr = load("hdr", "hdr-readiness.py")
 supervisor = load("supervisor", "supervise.py")
+verifier = load("verifier", "verify-kiosk.py")
 
 
 class HdrPrerequisiteTest(unittest.TestCase):
@@ -311,6 +312,19 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertIn("source_image.Scale", script)
         self.assertNotIn("Image.Text(", script)
         self.assertNotIn('Image("spinner', script)
+
+    def test_logging_checks_vendor_dropins_not_just_directory_or_main_file(self):
+        main = "[Journal]\n#Storage=auto\n"
+        vendor = "[Journal]\nStorage=volatile\n"
+        syslog = "[Journal]\nForwardToSyslog=yes\n"
+        diagnostics = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-diagnostics.conf").read_text()
+        self.assertEqual(verifier.effective_journal_settings(main + vendor + syslog)["Storage"], "volatile")
+        merged = verifier.effective_journal_settings(main + vendor + diagnostics + syslog)
+        self.assertEqual(merged["Storage"], "persistent")
+        self.assertEqual(merged["SyncIntervalSec"], "15s")
+        self.assertEqual(merged["SystemMaxUse"], "64M")
+        # A future later override must remain visible instead of reporting the desired setting.
+        self.assertEqual(verifier.effective_journal_settings(main + diagnostics + vendor)["Storage"], "volatile")
 
     def test_network_provisioning_does_not_create_owner_password(self):
         files = ROOT / "stage-cloudplay/00-appliance/files"
