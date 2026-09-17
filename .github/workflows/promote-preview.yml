@@ -1,0 +1,69 @@
+name: Attach an existing preview to a draft beta
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful image build run ID
+        required: true
+        type: string
+      source_commit:
+        description: Exact image source commit (40 lowercase hex characters)
+        required: true
+        type: string
+      tag:
+        description: Existing beta tag and draft prerelease
+        required: true
+        type: string
+      image_sha256:
+        description: Independently reviewed compressed image SHA-256
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: cloudplay-promote-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ inputs.run_id }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      IMAGE_SHA256: ${{ inputs.image_sha256 }}
+    steps:
+      - name: Validate source build and unpublished beta target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+          gh run view "$RUN_ID" --json conclusion,headSha > run.json
+          jq -e --arg sha "$SOURCE_COMMIT" \
+            '.conclusion == "success" and .headSha == $sha' run.json
+          [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" == "$SOURCE_COMMIT" ]]
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease > release.json
+          jq -e '.isDraft == true and .isPrerelease == true' release.json
+      - name: Download the original image artifact without rebuilding
+        run: |
+          gh run download "$RUN_ID" \
+            --name "cloudplay-os-kiosk-preview-$SOURCE_COMMIT" --dir image
+      - name: Check provenance and attach the reviewed image
+        working-directory: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(cat provenance/cloudplay-commit.txt)" == "$SOURCE_COMMIT" ]]
+          sha256sum --check SHA256SUMS
+          shopt -s nullglob
+          images=(image_*.img.xz)
+          [[ ${#images[@]} == 1 ]]
+          printf '%s  %s\n' "$IMAGE_SHA256" "${images[0]}" | sha256sum --check -
+          # Never overwrite an existing asset or publish the draft automatically.
+          gh release upload "$RELEASE_TAG" "${images[0]}"
