@@ -387,6 +387,8 @@ class RecipeSafetyTest(unittest.TestCase):
         self.assertNotIn('Image("cloudplay.png")', script)
         self.assertIn('Plymouth.GetMode() == "shutdown"', script)
         self.assertIn('"Shutting down Cloudplay OS"', script)
+        self.assertIn('Plymouth.GetMode() == "reboot"', script)
+        self.assertIn('"Restarting Cloudplay OS"', script)
         self.assertIn("source_image.Scale", script)
         self.assertIn("Plymouth.SetDisplayMessageFunction(display_message)", script)
         self.assertIn("global.frame++", script)

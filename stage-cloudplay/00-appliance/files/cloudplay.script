@@ -17,6 +17,8 @@ status_sprite = Sprite();
 status_text = "Starting Cloudplay OS";
 if (Plymouth.GetMode() == "shutdown")
     status_text = "Shutting down Cloudplay OS";
+if (Plymouth.GetMode() == "reboot")
+    status_text = "Restarting Cloudplay OS";
 status_source = Image.Text(status_text, 0.55, 0.68, 0.76, 1, "Sans 16");
 frame = 0;
 screen_width = -1;

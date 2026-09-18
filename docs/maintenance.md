@@ -113,7 +113,8 @@ the remaining service flows still require the hardware acceptance checklist.
 The `cloudplay` Plymouth theme uses a 1920×1080 background with a clear footer.
 One 12-frame spinner sits above a separate live status line. It identifies
 startup as **Starting Cloudplay OS** and shutdown as **Shutting down Cloudplay
-OS**. Other sizes use centered aspect-preserving scaling, not cropping.
+OS**; a reboot displays **Restarting Cloudplay OS**. Other sizes use centered
+aspect-preserving scaling, not cropping.
 Asset checksums are tested and recorded with configuration hashes. Runtime text
 uses the installed Plymouth label/font support, not Windows fonts or Pillow.
 `scripts/generate-spinner.py` reproducibly creates the tiny PNG frames using
