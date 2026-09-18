@@ -4,6 +4,8 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -242,6 +244,28 @@ class RuntimeTests(unittest.TestCase):
         self.time = 220
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
 
+    def test_health_waits_for_deadline_probe_lock(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        held, release = threading.Event(), threading.Event()
+
+        def deadline_probe():
+            with Journal(self.root).operation():
+                held.set()
+                release.wait(2)
+
+        worker = threading.Thread(target=deadline_probe)
+        worker.start()
+        timer = threading.Timer(0.15, release.set)
+        try:
+            self.assertTrue(held.wait(1))
+            timer.start()
+            self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
+            self.assertEqual(self.runtime.journal.load()["pending"]["last_health_check"], self.time)
+        finally:
+            release.set()
+            timer.cancel()
+            worker.join(3)
+
     def test_confirmed_boot_marker_recovers_interrupted_promotion_commit(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
@@ -411,6 +435,43 @@ class StateTests(unittest.TestCase):
                 with self.assertRaisesRegex(UpdateError, "BUSY"):
                     with second.operation():
                         self.fail("lock admitted competing writer")
+
+    def test_operation_lock_waits_for_brief_contention(self):
+        with tempfile.TemporaryDirectory() as name:
+            first, second = Journal(Path(name)), Journal(Path(name))
+            started, acquired = threading.Event(), threading.Event()
+            errors = []
+
+            def contender():
+                started.set()
+                try:
+                    with second.operation(timeout=2):
+                        acquired.set()
+                except Exception as exc:
+                    errors.append(exc)
+
+            with first.operation():
+                worker = threading.Thread(target=contender)
+                worker.start()
+                self.assertTrue(started.wait(1))
+                self.assertFalse(acquired.wait(0.1))
+            worker.join(3)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(errors, [])
+            self.assertTrue(acquired.is_set())
+
+    def test_operation_lock_wait_is_bounded(self):
+        with tempfile.TemporaryDirectory() as name:
+            first, second = Journal(Path(name)), Journal(Path(name))
+            with first.operation():
+                start = time.monotonic()
+                with self.assertRaisesRegex(UpdateError, "BUSY"):
+                    with second.operation(timeout=0.1):
+                        self.fail("lock admitted competing writer")
+                self.assertGreaterEqual(time.monotonic() - start, 0.1)
+                self.assertLess(time.monotonic() - start, 2)
+            with second.operation():
+                pass
 
     def test_atomic_failure_retains_previous_state(self):
         with tempfile.TemporaryDirectory() as name:

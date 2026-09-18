@@ -9,7 +9,8 @@ sys.path.insert(0, str(source if source.is_dir() else Path("/usr/local/lib/cloud
 import main
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import GLib, Gtk
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib, Gtk
 
 
 class Browser:
@@ -97,25 +98,39 @@ if trusted_mode:
     heartbeats = Heartbeats(Path(os.environ["XDG_RUNTIME_DIR"]))
 
 
+def press(window, keyval):
+    event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+    event.keyval = keyval
+    assert window.emit("key-press-event", event), "Navigation key was not handled"
+
+
 def drive_trusted(window, buttons, titles):
     global done
     assert not browser.starts, "Trusted session started a browser"
     if step == 0:
         assert "SYSTEM UPDATES" in titles and len(buttons) == 3
-        buttons[1].clicked()
+        press(window, Gdk.KEY_Down)
+        press(window, Gdk.KEY_Return)
     elif step == 1:
         assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
-        pads.actions = ["back"]
+        assert updates.commands == []
+        press(window, Gdk.KEY_space)
     elif step == 2:
         assert "SYSTEM UPDATES" in titles
-        buttons[1].clicked()
+        assert updates.commands == []
+        press(window, Gdk.KEY_Down)
+        press(window, Gdk.KEY_KP_Enter)
         confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
-        confirmation[1].clicked()
+        assert window.get_focus() == confirmation[0]
+        press(window, Gdk.KEY_Down)
+        press(window, Gdk.KEY_space)
     elif step == 3:
         assert updates.commands == ["install"] and len(buttons) == 2
-        buttons[1].clicked()
+        buttons[1].grab_focus()
+        press(window, Gdk.KEY_Return)
         confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
-        confirmation[0].clicked()
+        assert window.get_focus() == confirmation[0]
+        press(window, Gdk.KEY_KP_Enter)
     elif step == 4:
         updates.status.update(phase="tryboot_running", can_restart=False)
         updates.changed = True

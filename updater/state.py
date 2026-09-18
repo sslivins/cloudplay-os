@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, fields
+import errno
 import json
 import os
 from pathlib import Path
 import stat
 import threading
+import time
 import uuid
 
 from .artifacts import SemVer, canonical_json
@@ -175,27 +177,37 @@ class Journal:
         self._mutex = threading.RLock()
 
     @contextmanager
-    def operation(self):
+    def operation(self, *, timeout=0):
+        if type(timeout) not in (int, float) or not 0 <= timeout <= 30:
+            raise ValueError("Operation lock timeout must be between 0 and 30 seconds")
         if self.directory.is_symlink() or not self.directory.is_dir():
             fail("STATE", "provisioned persistent state directory is unavailable")
         path = self.directory / "operation.lock"
         fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
+            deadline = time.monotonic() + timeout
             if os.name == "posix":
                 import fcntl
-                try:
+                def acquire():
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError as exc:
-                    raise UpdateError("BUSY", "another updater operation holds the lock") from exc
             else:
                 import msvcrt
                 if os.fstat(fd).st_size == 0:
                     os.write(fd, b"\0")
-                os.lseek(fd, 0, os.SEEK_SET)
-                try:
+                def acquire():
+                    os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            while True:
+                try:
+                    acquire()
+                    break
                 except OSError as exc:
-                    raise UpdateError("BUSY", "another updater operation holds the lock") from exc
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise UpdateError("BUSY", "another updater operation holds the lock") from exc
+                    time.sleep(min(0.05, remaining))
             yield
         finally:
             os.close(fd)

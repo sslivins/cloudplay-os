@@ -105,6 +105,8 @@ heartbeat; a separate bounded subprocess completes a real Wayland round trip
 before publishing the compositor heartbeat. Health verifies owner 450 and
 private modes, not just timestamps. Successful confirmation enables Return to
 Main Menu; returning stops the private compositor before restoring greetd.
+Arrow keys select actions; Enter, keypad Enter, or Space activates the focused
+action. Install and restart confirmations initially select **Not Now**.
 
 The maintenance broker has only `open`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks
@@ -320,7 +322,11 @@ Internet and display presence are not required. It requires 120 continuous
 healthy seconds within a 600-second candidate deadline; a failed check resets
 the stabilization interval, as does a gap exceeding 30 seconds between health
 samples. Deadline state is boot-bound and not extended by
-repeated reconciliation. Promotion writes `[all]` and `[tryboot]` in mirrors,
+repeated reconciliation. Health samples wait up to five seconds for the shared
+operation lock so a brief concurrent deadline probe does not discard a sample.
+Other operations, including deadline probes, retain nonblocking acquisition;
+lock-wait time does not extend the candidate deadline.
+Promotion writes `[all]` and `[tryboot]` in mirrors,
 then authoritative control, before committing the new current/last-good state.
 Forward data migrations require separate post-promotion integration.
 

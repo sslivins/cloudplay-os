@@ -349,7 +349,9 @@ class Runtime:
 
     def health(self, *, deadline_only=False):
         self.config.mutation_gate()
-        with self.journal.operation():
+        # The daemon's deadline probe shares this lock with the health timer.
+        # Wait through brief contention rather than dropping a health sample.
+        with self.journal.operation(timeout=5 if not deadline_only else 0):
             state = self.journal.load()
             if state["phase"] not in ("tryboot_running", "promoting") or not state["pending"]:
                 return self.status()

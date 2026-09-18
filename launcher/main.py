@@ -404,7 +404,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
 
     def key(_, event):
         action = {Gdk.KEY_Escape: "back", Gdk.KEY_Up: "up", Gdk.KEY_Down: "down",
-                  Gdk.KEY_Left: "left", Gdk.KEY_Right: "right"}.get(event.keyval)
+                  Gdk.KEY_Left: "left", Gdk.KEY_Right: "right",
+                  Gdk.KEY_Return: "accept", Gdk.KEY_KP_Enter: "accept",
+                  Gdk.KEY_space: "accept"}.get(event.keyval)
         if action:
             navigate(action)
         return bool(action)
