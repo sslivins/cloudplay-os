@@ -82,6 +82,11 @@ both mounted slot inventories, and emits checksums and provenance with
 `production_baseline: false`. It never formats a caller-supplied physical disk.
 OTA images mask automatic EEPROM updates: firmware changes are separate
 maintenance and must not silently invalidate the reviewed boot/rollback policy.
+Data-filesystem growth is checked against its actual block count on every boot.
+Growth uses an explicit whole-4-MiB target and a forced offline filesystem check;
+an already expanded filesystem is not resized again for a small trailing gap.
+An interruption after partition growth can therefore resume filesystem growth
+without shrinking or formatting existing data.
 FAT partitions are written and read back with `mtools`; the host needs no
 vfat kernel module. Ext4 partitions are mounted only through the verified
 new-image loop device. Assembly compares the inputs to the metadata returned

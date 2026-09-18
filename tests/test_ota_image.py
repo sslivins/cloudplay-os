@@ -145,6 +145,42 @@ class GeometryTests(unittest.TestCase):
             with self.subTest(root=root, boot=boot, capacity=capacity), self.assertRaises(ValueError):
                 firstboot.identity(value, root, boot, capacity)
 
+    def test_already_grown_card_does_not_repeat_resize_for_small_tail(self):
+        with mock.patch.object(firstboot, "run") as run, \
+                mock.patch.object(firstboot, "filesystem_geometry", return_value=(3055736, 4096)), \
+                mock.patch.object(firstboot, "output", return_value="12516310528"):
+            firstboot.grow_filesystem("/dev/mmcblk0p6")
+        run.assert_called_once_with("e2fsck", "-p", "/dev/mmcblk0p6",
+                                    accepted=(0, 1), timeout=600)
+
+    def test_interrupted_partition_only_growth_resumes_with_forced_check(self):
+        target = (12516310528 // layout.ALIGN_BYTES * layout.ALIGN_BYTES) // 4096
+        with mock.patch.object(firstboot, "run") as run, \
+                mock.patch.object(firstboot, "filesystem_geometry",
+                                  side_effect=[(505856, 4096), (target, 4096)]), \
+                mock.patch.object(firstboot, "output", return_value="12516310528"):
+            firstboot.grow_filesystem("/dev/mmcblk0p6")
+        self.assertEqual(run.call_args_list, [
+            mock.call("e2fsck", "-p", "/dev/mmcblk0p6", accepted=(0, 1), timeout=600),
+            mock.call("e2fsck", "-f", "-p", "/dev/mmcblk0p6", accepted=(0, 1), timeout=600),
+            mock.call("resize2fs", "/dev/mmcblk0p6", str(target), timeout=600)])
+
+    def test_growth_must_read_back_exact_target_geometry(self):
+        with mock.patch.object(firstboot, "run"), \
+                mock.patch.object(firstboot, "filesystem_geometry",
+                                  side_effect=[(1000, 4096), (1001, 4096)]), \
+                mock.patch.object(firstboot, "output", return_value=str(64 * layout.MIB)):
+            with self.assertRaisesRegex(ValueError, "readback mismatch"):
+                firstboot.grow_filesystem("fixture")
+
+    def test_filesystem_cannot_exceed_partition(self):
+        with mock.patch.object(firstboot, "run") as run, \
+                mock.patch.object(firstboot, "filesystem_geometry", return_value=(20000, 4096)), \
+                mock.patch.object(firstboot, "output", return_value=str(64 * layout.MIB)):
+            with self.assertRaisesRegex(ValueError, "exceeds"):
+                firstboot.grow_filesystem("fixture")
+        self.assertEqual(run.call_count, 1)
+
     def test_fat_first_and_nonoverlapping(self):
         self.assertEqual([row[1] for row in layout.PARTITIONS],
                          ["boot-control", "boot-A", "boot-B", "root-A", "root-B", "data"])
@@ -215,6 +251,40 @@ class GeometryTests(unittest.TestCase):
 @unittest.skipUnless(os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0,
                      "requires a root-owned POSIX fixture")
 class FirstbootFilesystemTests(unittest.TestCase):
+    @unittest.skipUnless(all(shutil.which(tool) for tool in
+                            ("losetup", "mkfs.ext4", "e2fsck", "resize2fs", "dumpe2fs", "debugfs")),
+                         "requires native ext4 tools")
+    def test_real_ext4_growth_is_repeatable_and_preserves_identity(self):
+        with tempfile.TemporaryDirectory(prefix="cloudplay-grow-") as name:
+            work = Path(name)
+            image, probe = work / "data.img", work / "identity"
+            probe.write_bytes(b"preserve-device-identity\n")
+            with image.open("xb") as stream:
+                stream.truncate(64 * layout.MIB)
+            subprocess.run(["mkfs.ext4", "-q", "-F", str(image)], check=True, timeout=30)
+            subprocess.run(["debugfs", "-w", "-R", f"write {probe} /identity", str(image)],
+                           check=True, capture_output=True, timeout=30)
+            loop = subprocess.check_output(
+                ["losetup", "--find", "--show", str(image)], text=True, timeout=30).strip()
+            try:
+                assembler.assert_loop(loop, image)
+                for capacity in (128 * layout.MIB + 19 * 512, 192 * layout.MIB + 31 * 512):
+                    with image.open("r+b") as stream:
+                        stream.truncate(capacity)
+                    subprocess.run(["losetup", "--set-capacity", loop], check=True, timeout=30)
+                    firstboot.grow_filesystem(loop)
+                    count, size = firstboot.filesystem_geometry(loop)
+                    self.assertEqual(count * size, capacity // layout.ALIGN_BYTES * layout.ALIGN_BYTES)
+                    with mock.patch.object(firstboot, "run", wraps=firstboot.run) as run:
+                        firstboot.grow_filesystem(loop)
+                    self.assertNotIn("resize2fs", [call.args[0] for call in run.call_args_list])
+                    self.assertEqual(subprocess.check_output(
+                        ["debugfs", "-R", "cat /identity", loop], stderr=subprocess.DEVNULL,
+                        timeout=30), probe.read_bytes())
+            finally:
+                assembler.assert_loop(loop, image)
+                subprocess.run(["losetup", "--detach", loop], check=True, timeout=30)
+
     def test_atomic_identity_and_layout_binding(self):
         with tempfile.TemporaryDirectory(prefix="cloudplay-firstboot-") as name:
             work = Path(name)

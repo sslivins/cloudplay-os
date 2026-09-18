@@ -10,7 +10,7 @@ import stat
 import subprocess
 import sys
 
-from layout import MIN_CARD_BYTES, validate_geometry
+from layout import ALIGN_BYTES, MIN_CARD_BYTES, validate_geometry
 
 
 def run(*args, timeout=120, accepted=(0,), **kwargs):
@@ -115,6 +115,38 @@ def bind(source, destination):
     run("mount", "--bind", source, destination)
 
 
+def filesystem_geometry(device):
+    header = run("dumpe2fs", "-h", device, capture_output=True, text=True,
+                 env={**os.environ, "LC_ALL": "C"}).stdout
+    values = []
+    for field in ("Block count", "Block size"):
+        matches = re.findall(rf"^{field}:\s+([0-9]+)\s*$", header, re.MULTILINE)
+        if len(matches) != 1:
+            raise ValueError("FIRSTBOOT: cannot establish data filesystem geometry")
+        values.append(int(matches[0]))
+    count, size = values
+    if count <= 0 or size not in (1024, 2048, 4096, 8192, 16384, 32768, 65536):
+        raise ValueError("FIRSTBOOT: invalid data filesystem geometry")
+    return count, size
+
+
+def grow_filesystem(device):
+    run("e2fsck", "-p", device, accepted=(0, 1), timeout=600)
+    count, size = filesystem_geometry(device)
+    capacity = int(output("blockdev", "--getsize64", device))
+    target = (capacity // ALIGN_BYTES * ALIGN_BYTES) // size
+    if target <= 0 or count * size > capacity:
+        raise ValueError("FIRSTBOOT: data filesystem exceeds its partition")
+    # Leave a sub-alignment tail alone. Repeated implicit resize requests can
+    # differ by a few blocks and require a forced fsck even on a clean device.
+    if count >= target:
+        return
+    run("e2fsck", "-f", "-p", device, accepted=(0, 1), timeout=600)
+    run("resize2fs", device, str(target), timeout=600)
+    if filesystem_geometry(device) != (target, size):
+        raise ValueError("FIRSTBOOT: data filesystem growth readback mismatch")
+
+
 def prepare():
     if os.geteuid() != 0:
         raise ValueError("FIRSTBOOT: root required")
@@ -155,8 +187,7 @@ def prepare():
         if table["id"] != changed["id"] or any(
                 before["uuid"] != after["uuid"] for before, after in zip(parts, grown)):
             raise ValueError("FIRSTBOOT: partition identity changed during data growth")
-        run("e2fsck", "-p", data_device, accepted=(0, 1), timeout=600)
-        run("resize2fs", data_device, timeout=600)
+        grow_filesystem(data_device)
         run("mount", "-t", "ext4", "-o", "nosuid,nodev,noatime", data_device, data)
     persistent = data / "cloudplay"
     directory(persistent, 0o755)
