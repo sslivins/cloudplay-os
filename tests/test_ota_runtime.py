@@ -266,6 +266,15 @@ class RuntimeTests(unittest.TestCase):
             timer.cancel()
             worker.join(3)
 
+    def test_idle_health_timers_do_not_contend_with_staged_restart(self):
+        self.runtime.install()
+        with Journal(self.root).operation():
+            for deadline_only in (False, True):
+                with self.subTest(deadline_only=deadline_only):
+                    self.assertEqual(
+                        self.runtime.health(deadline_only=deadline_only)["phase"],
+                        "ready_to_restart")
+
     def test_confirmed_boot_marker_recovers_interrupted_promotion_commit(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()

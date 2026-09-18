@@ -124,6 +124,7 @@ class ServiceTests(unittest.TestCase):
         with self.assertLogs("cloudplay.updater", level="ERROR"):
             service._work("check")
         self.assertEqual(set(runtime.journal.update.call_args.kwargs), {"error"})
+        runtime.journal.operation.assert_called_once_with(timeout=5)
         runtime._error.assert_not_called()
 
 

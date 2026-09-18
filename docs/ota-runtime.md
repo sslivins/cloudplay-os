@@ -330,6 +330,8 @@ repeated reconciliation. Health samples wait up to five seconds for the shared
 operation lock so a brief concurrent deadline probe does not discard a sample.
 Other operations, including deadline probes, retain nonblocking acquisition;
 lock-wait time does not extend the candidate deadline.
+Outside a running candidate or promotion, health/deadline timers only read
+status and do not acquire the operation lock needed by install/restart.
 Promotion writes `[all]` and `[tryboot]` in mirrors,
 then authoritative control, before committing the new current/last-good state.
 Forward data migrations require separate post-promotion integration.
