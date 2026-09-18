@@ -9,12 +9,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install signing interoperability tools
+        run: sudo apt-get update -qq && sudo apt-get install -y minisign zstd mtools dosfstools
       - run: python3 -m unittest discover -s tests -v
+      - name: Check root-owned filesystem and peer-isolation fixtures
+        run: sudo python3 -m unittest tests.test_ota_image tests.test_ota_platform tests.test_ota_maintenance -v
       - run: python3 scripts/artifacts.py validate --allow-unset
       - run: node --check onboarding/setup.js
       - name: Shell syntax
         run: |
-          find scripts stage-cloudplay -type f \( -name '*.sh' -o -name 'cloudplay-start' -o -name 'cloudplay-session' -o -name 'cloudplay-browser-session' -o -name 'labwc-autostart' \) -print0 |
+          find scripts stage-cloudplay image-build -type f \( -name '*.sh' -o -name 'cloudplay-start' -o -name 'cloudplay-session' -o -name 'cloudplay-browser-session' -o -name 'labwc-autostart' \) -print0 |
             xargs -0 -r -n1 bash -n
           bash -n config
           bash -n stage-cloudplay/00-appliance/files/cloudplay-development-ssh

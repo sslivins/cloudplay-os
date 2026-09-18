@@ -267,6 +267,10 @@ class RecipeSafetyTest(unittest.TestCase):
         build = (ROOT / "scripts/build-image.sh").read_text()
         self.assertIn("client.py,readiness.py,boot.py,setup.html", build)
 
+    def test_ota_does_not_automatically_change_bootloader_firmware(self):
+        install = (ROOT / "scripts/install-ota.sh").read_text().replace("\\\n", "")
+        self.assertRegex(install, r"systemctl mask[^\n]*rpi-eeprom-update\.service")
+
     def test_early_splash_gate_does_not_wait_for_late_cloud_final(self):
         unit = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-startup.service").read_text()
         dependencies = " ".join(re.findall(r"^(?:Wants|After)=(.*)$", unit, re.MULTILINE)).split()
@@ -283,7 +287,17 @@ class RecipeSafetyTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "ordering cycle"):
                 verifier.verify_boot_order()
         self.assertEqual(run.call_args.args[0][-1], "graphical.target")
+        self.assertIn("--generators=yes", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["stdin"], verifier.subprocess.DEVNULL)
         self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
+
+    def test_ota_graph_also_verifies_maintenance_start_transaction(self):
+        with patch.object(verifier.Path, "exists", return_value=True), \
+                patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(
+                    returncode=0, stdout="", stderr="")) as run:
+            verifier.verify_boot_order()
+        self.assertEqual(run.call_args.args[0][-2:],
+                         ["graphical.target", "cloudplay-maintenance.service"])
 
     def test_full_boot_graph_accepts_clean_graph_and_rejects_command_failure(self):
         with patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(

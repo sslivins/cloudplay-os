@@ -1,0 +1,10 @@
+[Unit]
+Description=Enforce Cloudplay candidate deadline independently of the daemon
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

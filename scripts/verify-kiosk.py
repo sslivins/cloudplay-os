@@ -22,9 +22,13 @@ def effective_journal_settings(text):
 
 
 def verify_boot_order():
+    targets = ["graphical.target"]
+    if Path("/etc/cloudplay/ota-enabled").exists():
+        targets.append("cloudplay-maintenance.service")
     result = subprocess.run(
-        ["systemd-analyze", "verify", "--man=no", "graphical.target"],
-        capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
+        ["systemd-analyze", "verify", "--generators=yes", "--man=no", *targets],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        env={**os.environ, "LC_ALL": "C"})
     diagnostics = result.stdout + result.stderr
     assert result.returncode == 0, diagnostics
     # systemd can report success after deleting jobs to resolve a boot cycle.
@@ -249,12 +253,53 @@ def main():
               ("network.py", "service.py", "client.py", "readiness.py", "boot.py",
                "setup.html", "setup.js", "setup.css")]
     paths += ["/usr/local/lib/cloudplay/launcher/" + name for name in
-              ("main.py", "host.py", "gamepad.py")]
+              ("main.py", "host.py", "gamepad.py", "updates.py", "maintenance.py", "heartbeat.py")]
     paths += ["/usr/local/lib/cloudplay/launcher/assets/" + name for name in
               ("cloudplay-logo.png", "geforce-now-logo.png",
                "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
                "controller-icon.png")]
     paths += [str(path) for path in frames]
+    ota = {"enabled": False}
+    if Path("/etc/cloudplay/ota-enabled").exists():
+        assert str(Path("/etc/systemd/system/rpi-eeprom-update.service").resolve()) == "/dev/null"
+        config = json.loads(Path("/etc/cloudplay/updater.json").read_text())
+        assert config["experimental_hardware_validation"] is False
+        assert config["launcher_isolation_verified"] is False
+        assert config["launcher_uid"] == config["socket_gid"] == 450
+        assert config["browser_uid"] == 1000
+        maintenance_account = pwd.getpwnam("cloudplay-update")
+        assert maintenance_account.pw_uid == maintenance_account.pw_gid == 450
+        assert maintenance_account.pw_shell == "/usr/sbin/nologin"
+        release = json.loads(Path("/usr/share/cloudplay/release.json").read_text())
+        assert release["launcher_smoke_passed"] is True
+        assert release["source_commit"] == Path(
+            "/opt/cloudplay-build-inputs/cloudplay-commit.txt").read_text().strip()
+        assert json.loads(Path("/usr/local/share/cloudplay/updates-smoke.json").read_text()) == {"passed": True}
+        assert json.loads(Path("/usr/local/share/cloudplay/trusted-smoke.json").read_text()) == {"passed": True}
+        paths += ["/etc/cloudplay/ota-enabled", "/etc/cloudplay/updater.json",
+                  "/usr/share/cloudplay/release.json",
+                  "/usr/share/cloudplay/kernel-command-line.txt",
+                  "/usr/local/share/cloudplay/updates-smoke.json",
+                  "/usr/local/share/cloudplay/trusted-smoke.json",
+                  "/etc/systemd/system/greetd.service.d/cloudplay-updater.conf",
+                  "/etc/cloudplay/update-labwc/rc.xml",
+                  "/etc/systemd/system.conf.d/cloudplay-watchdog.conf"]
+        paths += ["/usr/local/lib/cloudplay/updater/" + name + ".py" for name in
+                  ("artifacts", "discovery", "state", "platform", "runtime", "service", "client", "boot", "maintenance")]
+        paths += ["/usr/lib/cloudplay/image/" + name for name in
+                  ("firstboot.py", "layout.py", "boot-service.py", "recovery.py", "autoboot.txt")]
+        paths += ["/etc/systemd/system/" + name for name in
+                  ("cloudplay-data.service", "cloudplay-update-bootstrap.service",
+                   "cloudplay-updater.service", "cloudplay-update-shutdown.service",
+                   "cloudplay-update-early-guard.service", "cloudplay-update-recovery.service",
+                   "cloudplay-maintenance.service", "cloudplay-maintenance-broker.service",
+                   "cloudplay-update-health.service", "cloudplay-update-health.timer",
+                   "cloudplay-update-deadline.service", "cloudplay-update-deadline.timer")]
+        keys = list(Path("/usr/share/cloudplay/update-keys").glob("epoch-*.pub"))
+        assert len(keys) >= 2, "Primary and recovery public keys required"
+        paths += [str(path) for path in keys]
+        ota = {"enabled": True, "mutation_enabled": False, "production_baseline": False,
+               "native_ui_smoke": True, "version": release["version"]}
     if development_ssh:
         paths.append("/etc/sudoers.d/90-cloudplay-development")
     for path in paths:
@@ -275,6 +320,7 @@ def main():
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "home": "native GTK Wayland; owner-only Unix control; fixed per-service user cgroup",
         "home_ui_smoke": home_smoke,
+        "ota": ota,
         "services": {"gfn": "existing persistent profile", "xbox": "separate persistent profile"},
         "controller": "up to four classified non-keyboard gamepads; Select+Start hold 2s",
         "startup_gate": "bounded DHCP wait before Plymouth releases DRM; helper failure does not force setup",

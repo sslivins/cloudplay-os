@@ -1,0 +1,18 @@
+[Unit]
+Description=Enforce Cloudplay boot-local candidate deadline
+DefaultDependencies=no
+Requires=boot-firmware.mount
+After=boot-firmware.mount
+Before=cloudplay-data.service sysinit.target
+OnFailure=cloudplay-update-recovery.service
+
+[Service]
+Type=simple
+RemainAfterExit=yes
+Environment=PYTHONPATH=/usr/local/lib/cloudplay
+ExecStart=/usr/bin/python3 -B -m updater.service early-guard
+UMask=0077
+LimitCORE=0
+
+[Install]
+WantedBy=sysinit.target

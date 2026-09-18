@@ -1,0 +1,20 @@
+[Unit]
+Description=Prepare Cloudplay A/B persistent data
+DefaultDependencies=no
+Requires=cloudplay-update-early-guard.service
+After=local-fs.target
+After=cloudplay-update-early-guard.service
+OnFailure=cloudplay-update-recovery.service
+Before=sysinit.target NetworkManager.service greetd.service cloudplay-network.service
+Before=regenerate_ssh_host_keys.service ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /usr/lib/cloudplay/image/firstboot.py
+RemainAfterExit=yes
+TimeoutStartSec=20min
+UMask=0077
+
+[Install]
+RequiredBy=NetworkManager.service greetd.service cloudplay-network.service
+RequiredBy=regenerate_ssh_host_keys.service ssh.service

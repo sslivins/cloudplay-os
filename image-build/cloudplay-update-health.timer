@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Cloudplay tentative update health periodically
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

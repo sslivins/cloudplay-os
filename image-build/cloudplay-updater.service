@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudplay experimental signed OTA service
+Requires=cloudplay-data.service cloudplay-update-bootstrap.service
+After=cloudplay-data.service cloudplay-update-bootstrap.service
+Before=greetd.service
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=/usr/local/lib/cloudplay
+ExecStart=/usr/bin/python3 -B -m updater.service --config /data/cloudplay/update/config.json serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60min
+KillSignal=SIGTERM
+UMask=0077
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

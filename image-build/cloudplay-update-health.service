@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Cloudplay tentative update health
+Requires=cloudplay-data.service cloudplay-update-bootstrap.service
+After=cloudplay-data.service cloudplay-update-bootstrap.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /usr/lib/cloudplay/image/boot-service.py health
+TimeoutStartSec=2min
+UMask=0077

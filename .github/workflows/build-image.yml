@@ -21,7 +21,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
             dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \
-            gpg pigz xxd arch-test bmap-tools kmod
+            gpg pigz xxd arch-test bmap-tools kmod minisign zstd gdisk cloud-guest-utils mtools
       - name: Build (native ARM64, privileged dedicated runner)
         run: sudo bash scripts/build-image.sh
       - name: Retain pi-gen log even when the build fails
