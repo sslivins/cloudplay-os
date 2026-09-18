@@ -44,6 +44,38 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertEqual(ui.badge(client.status), "Updates")
         self.assertNotIn("dismiss", dict(ui.actions(client.status)).values())
 
+    def test_measured_progress_for_download_and_each_copy_phase(self):
+        for phase, action in (("downloading", "downloaded"),
+                              ("staging_boot", "copied"), ("staging_root", "copied")):
+            with self.subTest(phase=phase):
+                status = dict(phase=phase, progress=dict(received=5 * 1024**2, total=20 * 1024**2))
+                self.assertEqual(ui.progress_fraction(status), 0.25)
+                self.assertEqual(ui.progress_text(status), f"25% {action} (5.0 / 20.0 MiB)")
+                self.assertIn("25%", ui.summary(status))
+                self.assertNotIn("25%", ui.summary(status, include_progress=False))
+                status["progress"]["received"] = 20 * 1024**2 - 1
+                self.assertIn("99%", ui.progress_text(status))
+                status["progress"]["received"] += 1
+                self.assertEqual(ui.progress_fraction(status), 1)
+                self.assertIn("100%", ui.progress_text(status))
+
+    def test_unknown_or_invalid_progress_never_invents_a_percentage(self):
+        invalid = (None, 50, {}, {"received": 1, "total": 0},
+                   {"received": True, "total": 2}, {"received": 1.5, "total": 2},
+                   {"received": -1, "total": 2}, {"received": 3, "total": 2},
+                   {"received": 1, "total": 2**64}, {"received": 1, "total": "2"})
+        for progress in invalid:
+            with self.subTest(progress=progress):
+                status = dict(phase="staging_root", progress=progress)
+                self.assertIsNone(ui.progress_fraction(status))
+                self.assertEqual(ui.progress_text(status), "Working...")
+                self.assertNotIn("%", ui.summary(status))
+        for phase in ("verifying", "verifying_slot", "publishing", "ready_to_restart",
+                      "tryboot_running", "restarting", "failed", "promoted"):
+            status = dict(phase=phase, progress=dict(received=3, total=4))
+            self.assertIsNone(ui.progress_fraction(status))
+            self.assertNotIn("%", ui.summary(status))
+
     def test_worker_never_blocks_caller_or_duplicates_requests(self):
         started, release = threading.Event(), threading.Event()
         calls = []

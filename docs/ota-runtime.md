@@ -167,6 +167,19 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
+The native screen shows measured byte counts and a progress bar for downloading,
+copying boot files, and copying root files. Each percentage describes that phase,
+not the whole update. Copy counters exclude withheld firmware entrypoints;
+100% copied does not bypass flushing, readback, or the final activation gate.
+Counters are volatile daemon telemetry, not repeated writes of the large durable
+candidate manifest. Other busy phases show a pulsing activity bar and their named
+stage, not an invented percentage or time estimate. Status refreshes update these
+widgets in place without remapping the window or stealing the selected action.
+A confirmed restart shows `restarting` while rechecking the candidate; the durable
+state stays `ready_to_restart` until the boot attempt is recorded, preserving
+power-loss recovery. A failed restart restores the restart action and reports its
+error. An unavailable status connection stops the activity indication.
+
 Wire request: one UTF-8 JSON line with exactly `{"command":"status"}` (or
 `check`, `install`, `cancel`, `restart`). Maximum request is 1024 bytes;
 response is 65536 bytes. The daemon imposes a 3-second total request deadline,

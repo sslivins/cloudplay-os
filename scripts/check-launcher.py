@@ -64,6 +64,9 @@ errors = []
 done = False
 update_mode = os.environ.get("CLOUDPLAY_SMOKE_UPDATES") == "1"
 trusted_mode = os.environ.get("CLOUDPLAY_SMOKE_TRUSTED") == "1"
+progress_widgets = {}
+progress_pulses = []
+progress_unmaps = []
 
 
 class Updates:
@@ -139,6 +142,44 @@ def drive_trusted(window, buttons, titles):
         updates.status.update(phase="promoted", provider_launch_allowed=True)
         updates.changed = True
     elif step == 6:
+        updates.status.update(phase="staging_root", provider_launch_allowed=False,
+                              progress={"received": 5 * 1024**2, "total": 20 * 1024**2})
+        updates.changed = True
+    elif step == 7:
+        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
+        assert bar.get_fraction() == 0.25 and "25% copied" in bar.get_text()
+        assert len(buttons) == 1 and window.get_focus() == buttons[0]
+        progress_widgets.update(bar=bar, button=buttons[0])
+        window.connect("unmap", lambda *_: progress_unmaps.append(True))
+        updates.status["progress"]["received"] = 10 * 1024**2
+        updates.changed = True
+    elif step == 8:
+        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
+        assert bar is progress_widgets["bar"] and bar.get_fraction() == 0.5
+        assert buttons[0] is progress_widgets["button"] and window.get_focus() == buttons[0]
+        assert not progress_unmaps, "A progress refresh remapped the window"
+        updates.status.update(phase="verifying_slot", progress=None)
+        updates.changed = True
+    elif step == 9:
+        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
+        assert bar is progress_widgets["bar"] and bar.get_text() == "Working..."
+        assert any("Checking the installed files" in text for text in titles)
+        original_pulse = bar.pulse
+        def pulse():
+            progress_pulses.append(True)
+            original_pulse()
+        bar.pulse = pulse
+    elif step == 10:
+        assert progress_pulses, "Indeterminate progress did not animate"
+        updates.error = "Update status connection unavailable"
+        updates.changed = True
+    elif step == 11:
+        assert not any(isinstance(w, Gtk.ProgressBar) for w in window.get_child().get_children())
+        assert updates.error in titles
+        updates.error = ""
+        updates.status.update(phase="promoted", provider_launch_allowed=True)
+        updates.changed = True
+    elif step == 12:
         assert len(buttons) == 2
         for name in ("launcher", "compositor"):
             path = Path(os.environ["XDG_RUNTIME_DIR"]) / (name + "-heartbeat.json")

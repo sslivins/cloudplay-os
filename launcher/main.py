@@ -9,6 +9,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -86,6 +87,19 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             color: #b9d3df;
             font-size: 18px;
             margin-bottom: 8px;
+        }
+        progressbar {
+            color: #b9d3df;
+            font-size: 18px;
+        }
+        progressbar trough {
+            min-height: 12px;
+            background: #112235;
+            border-radius: 6px;
+        }
+        progressbar progress {
+            background: #66dfe6;
+            border-radius: 6px;
         }
         button {
             color: #eef7ff;
@@ -166,6 +180,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     updates_screen = False
     update_confirmation = False
     update_notice = None
+    update_message = None
+    update_progress = None
+    update_choices = None
 
     def style(widget, *names):
         context = widget.get_style_context()
@@ -238,11 +255,13 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             row.pack_start(style(Gtk.Label(label=text), "return-text"), False, False, 0)
             box.pack_start(row, False, False, 0)
 
-    def show(title, choices, note="", services=False, return_help=False):
+    def show(title, choices, note="", services=False, return_help=False, activity=False):
         nonlocal updates_screen, update_confirmation, update_notice
+        nonlocal update_message, update_progress, update_choices
         updates_screen = False
         update_confirmation = title == "CONFIRM UPDATE"
         update_notice = None
+        update_message = update_progress = update_choices = None
         for child in box.get_children():
             box.remove(child)
             child.destroy()
@@ -255,6 +274,12 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             status.set_max_width_chars(72)
             status.set_justify(Gtk.Justification.CENTER)
             box.pack_start(status, False, False, 0)
+            update_message = status
+        if activity:
+            update_progress = Gtk.ProgressBar()
+            update_progress.set_show_text(True)
+            update_progress.set_pulse_step(0.025)
+            box.pack_start(update_progress, False, False, 0)
         for choice in choices:
             if services:
                 service, action = choice
@@ -281,7 +306,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         buttons[0].grab_focus()
 
     def show_updates(note=""):
-        nonlocal updates_screen
+        nonlocal updates_screen, update_choices
         if updates is None or browser.service:
             return
         choices = [(label, lambda command=command: update_action(command),
@@ -296,9 +321,20 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                                 "view-refresh-symbolic", False))
         else:
             choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
-        message = note or updates.error or update_summary(updates.status)
-        show("SYSTEM UPDATES", choices, message)
-        updates_screen = True
+        message = note or updates.error or update_summary(updates.status, include_progress=False)
+        activity = updates.status.get("phase") in UPDATE_BUSY and not updates.error
+        choice_key = (tuple(choice[0] for choice in choices), activity)
+        if not updates_screen or choice_key != update_choices:
+            show("SYSTEM UPDATES", choices, message, activity=activity)
+            updates_screen = True
+            update_choices = choice_key
+        else:
+            update_message.set_text(message)
+        if update_progress is not None:
+            fraction = progress_fraction(updates.status)
+            if fraction is not None:
+                update_progress.set_fraction(fraction)
+            update_progress.set_text(progress_text(updates.status))
 
     def update_action(command):
         if updates is None or browser.service:
@@ -434,6 +470,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                 buttons[min(old_index, len(buttons) - 1)].grab_focus()
             elif update_notice is not None:
                 update_notice.set_label(update_badge(updates.status))
+        if update_progress is not None and progress_fraction(updates.status) is None:
+            update_progress.pulse()
         for action in pads.poll(window.get_visible()):
             navigate(action)
         return True

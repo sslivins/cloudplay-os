@@ -36,6 +36,12 @@ class Runtime:
         self.cancelled = threading.Event()
         self._cancel_lock = threading.Lock()
         self._destructive = False
+        self._progress = None
+        self._restarting = False
+
+    def _report_progress(self, phase, received, total):
+        # Telemetry is volatile: never rewrite the durable signed manifest per chunk.
+        self._progress = (phase, dict(received=received, total=total))
 
     def status(self):
         gate = None
@@ -50,19 +56,23 @@ class Runtime:
                         error=dict(code="UNINITIALIZED", message="Root provisioning/reconciliation required"))
         state = self.journal.load()
         pending, available = state.get("pending"), state.get("available")
+        phase = "restarting" if self._restarting and state["phase"] == "ready_to_restart" else state["phase"]
+        sample = self._progress
+        progress = (dict(sample[1]) if sample is not None and sample[0] == phase
+                    else state.get("progress"))
         return dict(
-            phase=state["phase"], current_version=state["current_version"],
+            phase=phase, current_version=state["current_version"],
             highest_version=state["highest_version"],
             available_version=available["version"] if available else None,
             candidate_version=pending["metadata"]["version"] if pending else None,
             notes=(available or {}).get("notes", "")[:2048],
             published_at=(available or {}).get("published_at"),
             download_size=(available or {}).get("size"),
-            progress=state.get("progress"), error=state["error"], notice=state.get("notice"),
+            progress=progress, error=state["error"], notice=state.get("notice"),
             install_enabled=gate is None and state["phase"] == "available",
             mutation_enabled=gate is None, gate=gate, strikes=state["strikes"],
             can_cancel=state["phase"] in ("downloading", "verifying") and not self._destructive,
-            can_restart=gate is None and state["phase"] == "ready_to_restart",
+            can_restart=gate is None and phase == "ready_to_restart",
             provider_launch_allowed=state["pending"] is None and state["phase"] not in BUSY | {"recovery_required"},
             last_successful_check=self.discovery.last_successful_check,
             next_check_at=self.discovery.next_check_at,
@@ -155,12 +165,8 @@ class Runtime:
             downloads.mkdir(mode=0o700)
             try:
                 self.journal.update(phase="downloading", error=None, progress=None)
-                last_progress = [0.0]
                 def progress(received, total):
-                    now = self.clock()
-                    if now - last_progress[0] >= 1 or received == total:
-                        self.journal.update(progress=dict(received=received, total=total))
-                        last_progress[0] = now
+                    self._report_progress("downloading", received, total)
                 bundle, signature = self.discovery.download(
                     state["available"], downloads, progress=progress,
                     cancel=self.cancelled.is_set)
@@ -194,12 +200,15 @@ class Runtime:
                             fail("STAGING_DEADLINE", "staging inhibitor/deadline expired")
                         if generated is not None:
                             pending["generated"] = generated
-                        self.journal.update(phase=phase, pending=copy.deepcopy(pending))
-                    self.platform.stage(extracted, metadata, layout, checkpoint)
+                        self._progress = None
+                        self.journal.update(phase=phase, pending=copy.deepcopy(pending), progress=None)
+                    self.platform.stage(extracted, metadata, layout, checkpoint,
+                                        progress=self._report_progress)
             except ERRORS as exc:
                 self._error(exc)
                 raise
             finally:
+                self._progress = None
                 # The path is exclusively generated under our private staging root.
                 # Never delete recovered/unknown directories automatically.
                 shutil.rmtree(staging)
@@ -216,12 +225,17 @@ class Runtime:
             pending = state["pending"]
             if layout.active != state["last_good"] or layout.target != pending["slot"]:
                 fail("SLOT", "active/candidate relationship changed")
-            self.platform.verify_good(layout, state["last_good_identity"])
-            self.platform.verify_candidate(layout, pending)
-            self.platform.write_pointers(layout, layout.active, pending["slot"])
-            pending["attempted"] = True
-            self.journal.update(pending=pending)
-            self.platform.reboot(tryboot=True)
+            self._restarting = True
+            try:
+                self.platform.verify_good(layout, state["last_good_identity"])
+                self.platform.verify_candidate(layout, pending)
+                self.platform.write_pointers(layout, layout.active, pending["slot"])
+                pending["attempted"] = True
+                self.journal.update(pending=pending)
+                self.platform.reboot(tryboot=True)
+            except BaseException:
+                self._restarting = False
+                raise
         return self.status()
 
     def reconcile(self, *, boot_id=None):
