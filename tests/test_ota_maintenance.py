@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -175,6 +176,54 @@ class KernelBoundaryTests(unittest.TestCase):
             self.assertTrue(json.loads(trusted.stdout)["ok"])
             runtime.install.assert_not_called()
             runtime.status.assert_called_once()
+
+    def test_broker_clients_can_traverse_parent_under_private_service_umask(self):
+        code = """
+import os, sys
+from pathlib import Path
+from updater import maintenance as m
+from updater.state import Config
+config = Config()
+m.SOCKET = Path(sys.argv[1])
+class Portal:
+    def __init__(self, runtime):
+        pass
+    def transition(self, uid, command):
+        m.authorize(uid, command, config)
+        return {"session": "authorized"}
+m.Portal = Portal
+os.umask(0o077)
+m.serve(config)
+"""
+        for existing in (False, True):
+            with self.subTest(bootstrap_created=existing), \
+                    tempfile.TemporaryDirectory(prefix="cloudplay-broker-", dir="/run") as directory:
+                root = Path(directory)
+                root.chmod(0o755)
+                path = root / "maintenance" / "control.sock"
+                if existing:
+                    path.parent.mkdir(mode=0o700)
+                process = subprocess.Popen(
+                    [sys.executable, "-c", code, str(path)],
+                    cwd=Path(__file__).resolve().parents[1],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not path.is_socket():
+                        if process.poll() is not None or time.monotonic() >= deadline:
+                            self.fail("Broker did not publish its socket")
+                        time.sleep(0.02)
+                    self.assertEqual(path.parent.stat().st_mode & 0o777, 0o755)
+                    self.assertEqual((path.parent / "broker").stat().st_mode & 0o777, 0o700)
+                    for uid, command, accepted in (
+                        (450, "close", True), (1000, "open", True), (1000, "close", False),
+                    ):
+                        result = self.child(uid, path, command)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertIs(json.loads(result.stdout)["ok"], accepted)
+                finally:
+                    process.terminate()
+                    process.communicate(timeout=8)
 
     def test_browser_cannot_connect_to_trusted_compositor_namespace(self):
         with tempfile.TemporaryDirectory(prefix="cloudplay-seat-") as directory:

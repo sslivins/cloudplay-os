@@ -111,6 +111,9 @@ action. Install and restart confirmations initially select **Not Now**.
 The maintenance broker has only `open`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks
 kernel peer credentials before executing either fixed transition.
+Its root-owned socket directory is explicitly traversable (0755), including
+when candidate bootstrap creates it under umask 0077. The active marker and
+singleton-lock directory remain private.
 
 ```text
 python3 -m updater.service --help

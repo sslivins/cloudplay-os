@@ -227,6 +227,9 @@ def serve(config):
     singleton.directory.mkdir(mode=0o700, exist_ok=True)
     trusted_path(singleton.directory, directory=True)
     with singleton.operation():
+        # Bootstrap and systemd use umask 0077; clients must traverse this
+        # public IPC parent while the marker and broker lock remain private.
+        SOCKET.parent.chmod(0o755)
         _serve(config)
 
 
