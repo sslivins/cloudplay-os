@@ -1,9 +1,9 @@
 # Experimental OTA runtime (schema 1)
 
-The new `updater.state`, `updater.platform`, `updater.runtime`, `updater.boot`,
+The `updater.state`, `updater.platform`, `updater.runtime`, `updater.boot`,
 `updater.service`, and `updater.client` modules implement the privileged runtime.
-They reuse the existing artifact and discovery contracts; they do not change
-the image builder, launcher, installed units, or signing policy.
+They share the artifact and discovery contracts with the image builder, native
+launcher and installed boot/session units.
 
 **This is not a production enablement.** Status remains available with mutation
 disabled. Install, physical writes, pointer updates, candidate promotion,
@@ -11,14 +11,13 @@ rollback and reboot require explicit root-owned experimental hardware approval
 AND verified launcher/browser isolation. No code automatically enables either
 gate. Real power-cut/torn-write acceptance remains outstanding.
 
-## Immediate parent integration contract
+## Image and launcher integration contract
 
-* Add **exactly `boot/autoboot.txt`** to the closed generated-file set in
-  `updater/artifacts.py` and omit it from bundles. Slot mirrors depend on local
+* **`boot/autoboot.txt`** belongs to the closed generated-file set in
+  `updater/artifacts.py` and is omitted from bundles. Slot mirrors depend on local
   last-good state; they cannot be immutable signed payload files. Runtime
   reports `ARTIFACT_CONTRACT` and refuses install/pointer changes until this
-  contract exists. Existing artifact/discovery files were not edited by this
-  runtime implementation.
+  contract exists.
 * Boot FAT manifest entries must have UID/GID 0, directories 0755 and regular
   files 0644. FAT cannot preserve arbitrary POSIX ownership/modes or symlinks.
   Root entries retain signed numeric UID/GID, mode bits and symlink text.
@@ -192,14 +191,15 @@ socket. An absent journal yields `uninitialized`; it is never silently reset.
 
 ## Root-owned JSON configuration
 
-Firstboot should provision `/data/cloudplay/update/config.json` as root:root
+Firstboot provisions `/data/cloudplay/update/config.json` as root:root
 0600 and use that explicit `--config` path in **every** installed root unit.
 The state directory is root:root 0700. Seed configuration only when absent;
 never replace an existing operator policy with baked defaults on later boots.
 This keeps the same reviewed policy available across both slots and rollback.
-A slot-local `/etc/cloudplay/updater.json` remains the CLI default for explicit
-operator use, but must not accidentally replace persistent policy during a
-candidate boot: default-false gates would prevent health/rollback execution.
+The CLI and installed units default to this persistent policy. The slot-local
+`/etc/cloudplay/updater.json` supplies only the firstboot seed; it must not
+replace persistent policy during a candidate boot, because its default-false
+gates would prevent health/rollback execution.
 
 Missing fields use the values below. Unknown fields are errors. Configuration,
 key directory, state directory and their ancestors must not be symlinks or

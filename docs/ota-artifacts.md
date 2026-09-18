@@ -186,9 +186,11 @@ python3 scripts/build-ota-bundle.py \
 
 The secret key must be outside the repository. Provision it through the trusted
 signing environment; the builder runs noninteractively, never stores a key in
-the artifact, and never generates production keys. **No production public keys
-are supplied by this change.** Publishing must fail until real independently
-held primary/recovery keys are established.
+the artifact, and never generates production keys. The committed epoch-1 public
+keys support experimental builds. Production approval still requires
+independently held recovery-key custody and completed hardware acceptance.
+See [GitHub signing](ota-images.md#github-signing-workflow) for the protected
+draft-beta workflow.
 
 Public keys are named `epoch-N-primary.pub`, `epoch-N-recovery.pub`, or another
 alphanumeric/hyphen/underscore role name. `N >= 1` is the trusted key epoch, not

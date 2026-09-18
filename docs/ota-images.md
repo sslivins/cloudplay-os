@@ -116,7 +116,7 @@ pi-gen and its chroots have exited. Both steps use the same fresh runner; this
 is not isolation against a compromised builder.
 
 The signing step materializes the primary key as an owner-only file outside
-the checkout, verifies that it matches the committed public key before the
+the checkout, verifies that it matches the committed public key before
 assembly, and removes it on success or failure. The privileged assembly
 receives a fixed environment without the raw signing secret or GitHub token.
 Only the signed release directory and separate build logs are uploaded.
