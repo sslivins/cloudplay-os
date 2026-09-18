@@ -14,7 +14,10 @@ for (i = 0; i < 12; i++) {
 }
 spinner_sprite = Sprite();
 status_sprite = Sprite();
-status_source = Image.Text("Starting Cloudplay OS", 0.55, 0.68, 0.76, 1, "Sans 16");
+status_text = "Starting Cloudplay OS";
+if (Plymouth.GetMode() == "shutdown")
+    status_text = "Shutting down Cloudplay OS";
+status_source = Image.Text(status_text, 0.55, 0.68, 0.76, 1, "Sans 16");
 frame = 0;
 screen_width = -1;
 screen_height = -1;
