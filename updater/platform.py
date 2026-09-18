@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import signal
 import stat
 import subprocess
@@ -124,9 +123,14 @@ def safe_child(root: Path, relative: str):
 
 
 def copy_payload(source: Path, target: Path, metadata: dict, prefix: str,
-                 withheld=frozenset()):
+                 withheld=frozenset(), *, progress=None):
     records = {name: record for name, record in metadata["manifest"].items()
                if name == prefix or name.startswith(prefix + "/")}
+    total = sum(record["size"] for name, record in records.items()
+                if record["type"] == "file" and name not in withheld)
+    received = 0
+    if progress:
+        progress(received, total)
     links, directories = [], []
     for name, record in sorted(records.items(), key=lambda pair: (pair[0].count("/"), pair[0])):
         if name == prefix:
@@ -144,7 +148,11 @@ def copy_payload(source: Path, target: Path, metadata: dict, prefix: str,
             links.append((destination, record))
         else:
             with origin.open("rb") as src, destination.open("xb") as out:
-                shutil.copyfileobj(src, out, 1024 * 1024)
+                while chunk := src.read(MIB):
+                    out.write(chunk)
+                    received += len(chunk)
+                    if progress and received < total:
+                        progress(received, total)
                 out.flush()
                 os.fsync(out.fileno())
             if prefix == "root":
@@ -155,6 +163,8 @@ def copy_payload(source: Path, target: Path, metadata: dict, prefix: str,
     if prefix == "root":
         for destination, record in reversed(directories):
             _set_attributes(destination, record)
+    if progress:
+        progress(received, total)
 
 
 def verify_slot(root: Path, boot: Path, metadata: dict, generated: dict,
@@ -498,7 +508,7 @@ class LinuxPlatform:
         os.rename(temporary, target)
         sync_directory(base)
 
-    def stage(self, source: Path, metadata: dict, layout: Layout, checkpoint):
+    def stage(self, source: Path, metadata: dict, layout: Layout, checkpoint, *, progress=None):
         """Write only verified inactive partitions; config.txt is the final gate."""
         self.config.mutation_gate()
         if self.inspect() != layout:
@@ -530,7 +540,9 @@ class LinuxPlatform:
         self.unmounted(target_boot)
         self.mutate(["mkfs.vfat", "-F", "32", "-n", f"CP-BOOT-{layout.target}", target_boot.node], timeout=120)
         with self.mounted(target_boot, "boot") as boot:
-            copy_payload(source, boot, metadata, "boot", frozenset({"boot/config.txt"}))
+            copy_payload(source, boot, metadata, "boot", frozenset({"boot/config.txt"}),
+                         progress=(lambda received, total: progress("staging_boot", received, total))
+                         if progress else None)
             self.flush(boot)
             checkpoint("staging_root", None)
             self.unmounted(target_root)
@@ -540,7 +552,9 @@ class LinuxPlatform:
                 lost = root / "lost+found"
                 if lost.is_dir() and not any(lost.iterdir()):
                     lost.rmdir()
-                copy_payload(source, root, metadata, "root")
+                copy_payload(source, root, metadata, "root",
+                             progress=(lambda received, total: progress("staging_root", received, total))
+                             if progress else None)
                 generated = self._generated(layout, metadata, root, boot)
                 checkpoint("verifying_slot", generated)
                 verify_slot(root, boot, metadata, generated, frozenset({"boot/config.txt"}))

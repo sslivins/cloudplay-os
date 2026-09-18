@@ -78,7 +78,7 @@ class FakePlatform:
         if self.fail_verify:
             raise UpdateError("SLOT_VERIFY", "changed target")
 
-    def stage(self, source, metadata, layout, checkpoint):
+    def stage(self, source, metadata, layout, checkpoint, *, progress=None):
         self.calls.append("stage")
         checkpoint("invalidating", None)
         if self.staging_failure:
@@ -152,6 +152,30 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("stage", self.platform.calls)
         self.assertEqual(self.runtime.journal.load()["highest_version"], "1.0.0")
 
+    def test_progress_is_volatile_phase_scoped_and_not_a_shared_mutable_response(self):
+        self.runtime.journal.update(phase="staging_root", progress=None)
+        with patch.object(self.runtime.journal, "save") as save:
+            self.runtime._report_progress("staging_root", 17, 100)
+            self.assertEqual(self.runtime.status()["progress"], dict(received=17, total=100))
+            self.runtime.status()["progress"]["received"] = 90
+            self.assertEqual(self.runtime.status()["progress"]["received"], 17)
+            save.assert_not_called()
+        self.runtime.journal.update(phase="verifying_slot")
+        self.assertIsNone(self.runtime.status()["progress"])
+        self.assertIsNone(self.runtime.journal.load()["progress"])
+
+    def test_install_wires_measured_copy_progress_and_clears_at_next_phase(self):
+        def stage(source, metadata, layout, checkpoint, *, progress):
+            checkpoint("staging_root", None)
+            progress("staging_root", 25, 100)
+            self.assertEqual(self.runtime.status()["progress"], dict(received=25, total=100))
+            self.assertIsNone(self.runtime.journal.load()["progress"])
+            checkpoint("verifying_slot", {})
+            self.assertIsNone(self.runtime.status()["progress"])
+            checkpoint("ready_to_restart", {})
+        self.platform.stage = stage
+        self.assertIsNone(self.runtime.install()["progress"])
+
     def test_cancel_during_verification_prevents_first_destructive_write(self):
         def verifier(*args, **kwargs):
             self.runtime.cancel()
@@ -181,7 +205,9 @@ class RuntimeTests(unittest.TestCase):
 
     def test_restart_verifies_target_before_pointer_and_records_attempt(self):
         self.runtime.install()
-        self.runtime.restart()
+        result = self.runtime.restart()
+        self.assertEqual(result["phase"], "restarting")
+        self.assertFalse(result["can_restart"])
         self.assertTrue(self.runtime.journal.load()["pending"]["attempted"])
         self.assertLess(self.platform.calls.index("verify_candidate"),
                         self.platform.calls.index(("pointer", "A", "B")))
@@ -193,6 +219,17 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(UpdateError, "SLOT_VERIFY"):
             self.runtime.restart()
         self.assertFalse(any(isinstance(c, tuple) and c[0] == "reboot" for c in self.platform.calls))
+        self.assertEqual(self.runtime.status()["phase"], "ready_to_restart")
+        self.assertTrue(self.runtime.status()["can_restart"])
+
+    def test_restart_readback_is_visible_without_changing_durable_recovery_phase(self):
+        self.runtime.install()
+        def verify(layout, pending):
+            self.assertEqual(self.runtime.status()["phase"], "restarting")
+            self.assertFalse(self.runtime.status()["can_restart"])
+            self.assertEqual(self.runtime.journal.load()["phase"], "ready_to_restart")
+        self.platform.verify_candidate = verify
+        self.runtime.restart()
 
     def test_restart_not_general_reboot(self):
         with self.assertRaisesRegex(UpdateError, "STATE"):

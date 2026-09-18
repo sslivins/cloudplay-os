@@ -50,7 +50,34 @@ def public_status(path=Path("/run/cloudplay-updater/status.json")):
                 install_enabled=False, can_cancel=False, can_restart=False)
 
 
-def summary(status):
+def progress_counts(status):
+    if status.get("phase") not in ("downloading", "staging_boot", "staging_root"):
+        return None
+    progress = status.get("progress")
+    if isinstance(progress, dict):
+        received, total = progress.get("received"), progress.get("total")
+        if (type(received) is int and type(total) is int
+                and 0 <= received <= total <= 2**63 - 1 and total > 0):
+            return received, total
+    return None
+
+
+def progress_fraction(status):
+    counts = progress_counts(status)
+    return counts[0] / counts[1] if counts is not None else None
+
+
+def progress_text(status):
+    counts = progress_counts(status)
+    if counts is None:
+        return "Working..."
+    received, total = counts
+    action = "downloaded" if status["phase"] == "downloading" else "copied"
+    return (f"{100 * received // total}% {action}"
+            f" ({received / 1024**2:.1f} / {total / 1024**2:.1f} MiB)")
+
+
+def summary(status, *, include_progress=True):
     phase = status.get("phase", "unknown")
     version = status.get("current_version", "")
     available = status.get("available_version")
@@ -69,7 +96,7 @@ def summary(status):
         "publishing": "Finishing installation. Do not remove power.",
         "promoting": "Confirming the updated system...",
         "ready_to_restart": "The update is ready. Restart when you have finished playing.",
-        "restarting": "Restarting into the update...",
+        "restarting": "Rechecking the installed files before restart. Keep the power connected.",
         "tryboot_running": "Checking the updated system...",
         "promoted": "The update is installed and the system checks passed.",
         "rolled_back": "The update did not start correctly. Your previous system was restored.",
@@ -84,13 +111,8 @@ def summary(status):
         lines.append("Installed: " + str(version)[:128])
     if available:
         lines.append("Available: " + str(available)[:128])
-    if phase == "downloading":
-        progress = status.get("progress")
-        if isinstance(progress, dict):
-            received, total = progress.get("received"), progress.get("total")
-            if (type(received) is int and type(total) is int and
-                    0 <= received <= total and total > 0):
-                lines.append(f"{100 * received / total:.0f}% downloaded")
+    if include_progress and progress_counts(status) is not None:
+        lines.append(progress_text(status))
     error = status.get("error")
     if error:
         if isinstance(error, dict):

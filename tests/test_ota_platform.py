@@ -255,6 +255,41 @@ class PlatformTests(unittest.TestCase):
                 self.assertEqual((target / "usr" / "payload").stat().st_uid, uid)
                 self.assertEqual((target / "usr" / "payload").stat().st_mode & 0o7777, 0o644)
 
+    def test_copy_progress_counts_bytes_excludes_withheld_and_finishes_after_sync(self):
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            source, target = base / "source", base / "target"
+            (source / "boot").mkdir(parents=True)
+            target.mkdir()
+            content = b"x" * (2 * 1024**2 + 9)
+            (source / "boot/payload").write_bytes(content)
+            (source / "boot/config.txt").write_bytes(b"withheld")
+            metadata = {"manifest": {"boot/payload": file_record(content),
+                                      "boot/config.txt": file_record(b"withheld")}}
+            events = []
+            with patch("updater.platform.os.fsync", side_effect=lambda _: events.append("sync")):
+                copy_payload(source, target, metadata, "boot", frozenset({"boot/config.txt"}),
+                             progress=lambda received, total: events.append((received, total)))
+            self.assertEqual(events, [(0, len(content)), (1024**2, len(content)),
+                                      (2 * 1024**2, len(content)), "sync",
+                                      (len(content), len(content))])
+            self.assertEqual((target / "payload").read_bytes(), content)
+            self.assertFalse((target / "config.txt").exists())
+
+    def test_copy_failure_does_not_report_completion(self):
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            source, target = base / "source", base / "target"
+            (source / "boot").mkdir(parents=True)
+            target.mkdir()
+            (source / "boot/payload").write_bytes(b"payload")
+            progress = Mock()
+            with patch("updater.platform.os.fsync", side_effect=OSError("injected write failure")):
+                with self.assertRaisesRegex(OSError, "injected write failure"):
+                    copy_payload(source, target, {"manifest": {"boot/payload": file_record(b"payload")}},
+                                 "boot", progress=progress)
+            self.assertEqual(progress.call_args_list, [unittest.mock.call(0, 7)])
+
     @unittest.skipUnless(os.name == "posix", "POSIX root filenames require native Linux storage")
     def test_root_dpkg_colons_and_case_variants_survive_physical_copy(self):
         import hashlib
@@ -471,6 +506,7 @@ class PlatformTests(unittest.TestCase):
 
             platform = FixturePlatform(Config())
             phases = []
+            progress = Mock()
             def checkpoint(phase, generated):
                 phases.append(phase)
                 if phase == "publishing":
@@ -489,8 +525,11 @@ class PlatformTests(unittest.TestCase):
                         platform.stage(source, metadata, layout, checkpoint)
                     self.assertFalse((target_boot / "config.txt").exists())
                 else:
-                    platform.stage(source, metadata, layout, checkpoint)
+                    platform.stage(source, metadata, layout, checkpoint, progress=progress)
                     self.assertEqual(phases[-2:], ["publishing", "ready_to_restart"])
+                    self.assertIn(unittest.mock.call("staging_boot", 0, 0), progress.call_args_list)
+                    self.assertIn(unittest.mock.call("staging_root", 0, len(template)), progress.call_args_list)
+                    self.assertEqual(progress.call_args.args, ("staging_root", len(template), len(template)))
             self.assertLess(events.index(("flush", "boot")), events.index(("mkfs.ext4",)))
             self.assertLess(events.index(("unmounted", 5)), events.index(("mkfs.ext4",)))
 
