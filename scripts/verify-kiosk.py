@@ -22,8 +22,11 @@ def effective_journal_settings(text):
 
 
 def verify_boot_order():
+    targets = ["graphical.target"]
+    if Path("/etc/cloudplay/ota-enabled").exists():
+        targets.append("cloudplay-maintenance.service")
     result = subprocess.run(
-        ["systemd-analyze", "verify", "--man=no", "graphical.target"],
+        ["systemd-analyze", "verify", "--generators=yes", "--man=no", *targets],
         capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
     diagnostics = result.stdout + result.stderr
     assert result.returncode == 0, diagnostics

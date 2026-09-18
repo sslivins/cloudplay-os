@@ -14,7 +14,7 @@ on_chroot <<'CHROOT'
 python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/onboarding"); import network, service, readiness, boot, dbus, qrcode.image.svg'
 python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/launcher"); import host, gamepad, main, gi; gi.require_version("Gtk", "3.0"); from gi.repository import Gtk'
 install -d -m 755 /run/sshd
-systemd-analyze verify --man=no /etc/systemd/system/cloudplay-network.service \
+systemd-analyze verify --generators=yes --man=no /etc/systemd/system/cloudplay-network.service \
     /etc/systemd/system/cloudplay-wifi-radio.service \
     /etc/systemd/system/cloudplay-startup.service greetd.service plymouth-quit.service
 runuser -u cloudplay -- test -w /dev/shm

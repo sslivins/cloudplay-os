@@ -283,7 +283,16 @@ class RecipeSafetyTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "ordering cycle"):
                 verifier.verify_boot_order()
         self.assertEqual(run.call_args.args[0][-1], "graphical.target")
+        self.assertIn("--generators=yes", run.call_args.args[0])
         self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
+
+    def test_ota_graph_also_verifies_maintenance_start_transaction(self):
+        with patch.object(verifier.Path, "exists", return_value=True), \
+                patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(
+                    returncode=0, stdout="", stderr="")) as run:
+            verifier.verify_boot_order()
+        self.assertEqual(run.call_args.args[0][-2:],
+                         ["graphical.target", "cloudplay-maintenance.service"])
 
     def test_full_boot_graph_accepts_clean_graph_and_rejects_command_failure(self):
         with patch.object(verifier.subprocess, "run", return_value=SimpleNamespace(
