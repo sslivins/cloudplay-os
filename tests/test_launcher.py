@@ -366,7 +366,9 @@ class LauncherWiringTest(unittest.TestCase):
         self.assertIn("71-cloudplay-gamepad.rules", stage)
         self.assertIn('"input"', verifier)
         self.assertIn("cloudplay-gamepad", verifier)
-        for name in ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png"):
+        for name in ("cloudplay-logo.png", "geforce-now-logo.png",
+                     "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
+                     "controller-icon.png"):
             self.assertIn('"' + name + '"', verifier)
             asset = ROOT / "launcher/assets" / name
             self.assertTrue(asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))

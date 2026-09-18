@@ -4,18 +4,18 @@ Cloudplay OS turns a Raspberry Pi into a cloud-gaming appliance, with a branded
 startup screen and Wi-Fi setup when needed. Services open in full-screen
 Chromium; there is no desktop or operating-system account wizard.
 
-**The linked preview boots directly to GeForce NOW.** Current source builds add
-**Cloudplay Home**, a controller-friendly menu for **GeForce NOW** and
-**Xbox Cloud Gaming**, plus return-to-Home controls. These additions are not
-included in that preview. The menu, both provider entry points and keyboard
-return flow have been exercised on CM5 test hardware; broader gameplay,
-controller, network and display acceptance remains in progress.
+Cloudplay OS boots to a controller-friendly **Cloudplay OS Main Menu** with
+branded entries for **GeForce NOW** and **Xbox Cloud Gaming**. Native recovery
+controls return to the active service, reload it, or close it and return to the
+Main Menu. The menu, both provider entry points and keyboard return flow are
+validated on CM5 test hardware; broader gameplay, controller, network and
+display acceptance remains in progress.
 
 It uses [Chromium with Raspberry Pi HEVC support](https://github.com/sslivins/chromium-rpi-hevc)
 and the [GeForce NOW compatibility extension](https://github.com/sslivins/gfn-pi-compat).
 The browser runs as an unprivileged user with its normal sandbox.
 
-**Development beta:** [download beta 1](https://github.com/sslivins/cloudplay-os/releases/tag/v0.1.0-beta.1).
+**Development beta:** [download beta 2](https://github.com/sslivins/cloudplay-os/releases/tag/v0.1.0-beta.2).
 Download the `.img.xz` release asset and `SHA256SUMS`. There is no stable
 release; 4K streaming and HDR display output are not yet validated.
 
@@ -40,14 +40,14 @@ Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
    Skip Imager's account and SSH customization; Cloudplay provides its own.
 4. Insert the card, connect the display and input devices, and power on.
    Ethernet is the simplest first-boot connection.
-5. With networking available, the linked preview opens GeForce NOW directly. Sign in to
-   NVIDIA and choose a game. Keep a keyboard and mouse available for sign-in.
+5. With networking available, Cloudplay opens the Main Menu. Choose GeForce NOW
+   or Xbox Cloud Gaming, sign in, and select a game. Keep a keyboard and mouse
+   available for sign-in.
 
-### Cloudplay OS Main Menu (source builds)
+### Cloudplay OS Main Menu
 
 Choose a service using the D-pad and A, or keyboard arrows/Tab and Enter.
 Keep a keyboard and mouse available for sign-in and unsupported controllers.
-The following controls are not present in the linked GeForce NOW preview.
 
 From any service page—including browser error pages—press **Ctrl+Alt+Home**
 (then release), or hold **Select/Back + Start/Menu together for two seconds**.
@@ -134,4 +134,6 @@ documented in [maintenance](docs/maintenance.md).
 
 Cloudplay's recipe, helpers and theme are [MIT licensed](LICENSE). Bundled OS
 and browser packages retain their own licenses and source-distribution
-obligations. Cloudplay OS is not affiliated with or endorsed by NVIDIA or Microsoft.
+obligations. NVIDIA, GeForce NOW, Xbox and Xbox Cloud Gaming names and logos
+belong to their respective owners. Cloudplay OS is not affiliated with or
+endorsed by NVIDIA or Microsoft.

@@ -162,7 +162,9 @@ def main():
     assert "lxsession" not in Path("/etc/cloudplay/labwc/autostart").read_text()
     launcher = Path("/usr/local/bin/cloudplay-start").read_text()
     assert "launcher/main.py" in launcher
-    for name in ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png"):
+    for name in ("cloudplay-logo.png", "geforce-now-logo.png",
+                 "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
+                 "controller-icon.png"):
         asset = Path("/usr/local/lib/cloudplay/launcher/assets", name)
         assert asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     launcher = Path("/usr/local/lib/cloudplay/launcher/host.py").read_text()
@@ -249,7 +251,9 @@ def main():
     paths += ["/usr/local/lib/cloudplay/launcher/" + name for name in
               ("main.py", "host.py", "gamepad.py")]
     paths += ["/usr/local/lib/cloudplay/launcher/assets/" + name for name in
-              ("cloudplay-logo.png", "keyboard-icon.png", "controller-icon.png")]
+              ("cloudplay-logo.png", "geforce-now-logo.png",
+               "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
+               "controller-icon.png")]
     paths += [str(path) for path in frames]
     if development_ssh:
         paths.append("/etc/sudoers.d/90-cloudplay-development")

@@ -10,6 +10,10 @@ from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
+SERVICE_LOGOS = {
+    "gfn": Path(__file__).with_name("assets") / "geforce-now-logo.png",
+    "xbox": Path(__file__).with_name("assets") / "xbox-cloud-gaming-logo.png",
+}
 RETURN_ICONS = {
     "keyboard": Path(__file__).with_name("assets") / "keyboard-icon.png",
     "controller": Path(__file__).with_name("assets") / "controller-icon.png",
@@ -109,22 +113,12 @@ def run(browser, control, pads):
         button.xbox-card {
             border-left: 8px solid #107c10;
         }
-        label.service-badge {
-            color: white;
-            background: #25445a;
-            border-radius: 12px;
-            font-size: 22px;
-            font-weight: bold;
-            min-width: 72px;
-            min-height: 54px;
-            padding: 10px;
+        box.service-logo-frame {
+            min-width: 190px;
+            min-height: 60px;
         }
-        label.gfn-badge {
-            background: #76b900;
-            color: #071005;
-        }
-        label.xbox-badge {
-            background: #107c10;
+        image.service-logo {
+            margin: 2px 0;
         }
         label.service-name {
             color: white;
@@ -185,9 +179,15 @@ def run(browser, control, pads):
         name = SERVICES[service][0]
         button = style(Gtk.Button(), "service-card", service + "-card")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
-        badge = style(Gtk.Label(label="GFN" if service == "gfn" else "X"),
-                      "service-badge", service + "-badge")
-        row.pack_start(badge, False, False, 0)
+        logo_frame = style(Gtk.Box(), "service-logo-frame")
+        logo_frame.set_size_request(190, 60)
+        logo_frame.set_halign(Gtk.Align.CENTER)
+        logo_frame.set_valign(Gtk.Align.CENTER)
+        logo = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+            str(SERVICE_LOGOS[service]), 180, 56, True)
+        logo_frame.pack_start(style(Gtk.Image.new_from_pixbuf(logo), "service-logo"),
+                              False, False, 0)
+        row.pack_start(logo_frame, False, False, 0)
         labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         labels.set_valign(Gtk.Align.CENTER)
         name_label = style(Gtk.Label(label=name), "service-name")
