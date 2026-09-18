@@ -16,7 +16,7 @@ python3 -B -c 'import sys; sys.path.insert(0, "/usr/local/lib/cloudplay/launcher
 install -d -m 755 /run/sshd
 systemd-analyze verify --generators=yes --man=no /etc/systemd/system/cloudplay-network.service \
     /etc/systemd/system/cloudplay-wifi-radio.service \
-    /etc/systemd/system/cloudplay-startup.service greetd.service plymouth-quit.service
+    /etc/systemd/system/cloudplay-startup.service greetd.service plymouth-quit.service </dev/null
 runuser -u cloudplay -- test -w /dev/shm
 runuser -u cloudplay -- python3 -B - <<'PY'
 import os

@@ -284,6 +284,7 @@ class RecipeSafetyTest(unittest.TestCase):
                 verifier.verify_boot_order()
         self.assertEqual(run.call_args.args[0][-1], "graphical.target")
         self.assertIn("--generators=yes", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["stdin"], verifier.subprocess.DEVNULL)
         self.assertEqual(run.call_args.kwargs["env"]["LC_ALL"], "C")
 
     def test_ota_graph_also_verifies_maintenance_start_transaction(self):

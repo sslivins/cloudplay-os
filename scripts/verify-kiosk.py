@@ -27,7 +27,8 @@ def verify_boot_order():
         targets.append("cloudplay-maintenance.service")
     result = subprocess.run(
         ["systemd-analyze", "verify", "--generators=yes", "--man=no", *targets],
-        capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        env={**os.environ, "LC_ALL": "C"})
     diagnostics = result.stdout + result.stderr
     assert result.returncode == 0, diagnostics
     # systemd can report success after deleting jobs to resolve a boot cycle.
