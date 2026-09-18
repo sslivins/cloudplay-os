@@ -80,6 +80,8 @@ cmdline files are checked separately. Assembly accepts only a newly created
 regular image file, verifies its loop backing file before formatting, compares
 both mounted slot inventories, and emits checksums and provenance with
 `production_baseline: false`. It never formats a caller-supplied physical disk.
+OTA images mask automatic EEPROM updates: firmware changes are separate
+maintenance and must not silently invalidate the reviewed boot/rollback policy.
 FAT partitions are written and read back with `mtools`; the host needs no
 vfat kernel module. Ext4 partitions are mounted only through the verified
 new-image loop device. Assembly compares the inputs to the metadata returned

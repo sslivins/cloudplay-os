@@ -267,6 +267,10 @@ class RecipeSafetyTest(unittest.TestCase):
         build = (ROOT / "scripts/build-image.sh").read_text()
         self.assertIn("client.py,readiness.py,boot.py,setup.html", build)
 
+    def test_ota_does_not_automatically_change_bootloader_firmware(self):
+        install = (ROOT / "scripts/install-ota.sh").read_text().replace("\\\n", "")
+        self.assertRegex(install, r"systemctl mask[^\n]*rpi-eeprom-update\.service")
+
     def test_early_splash_gate_does_not_wait_for_late_cloud_final(self):
         unit = (ROOT / "stage-cloudplay/00-appliance/files/cloudplay-startup.service").read_text()
         dependencies = " ".join(re.findall(r"^(?:Wants|After)=(.*)$", unit, re.MULTILINE)).split()

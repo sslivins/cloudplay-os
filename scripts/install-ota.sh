@@ -30,7 +30,7 @@ printf '[Manager]\nRuntimeWatchdogSec=30s\nRebootWatchdogSec=2min\n' \
 printf '\n[all]\ndtparam=watchdog=on\nkernel_watchdog_timeout=300\n' \
     >> /boot/firmware/config.txt
 systemctl mask apt-daily.service apt-daily.timer apt-daily-upgrade.service \
-    apt-daily-upgrade.timer unattended-upgrades.service
+    apt-daily-upgrade.timer unattended-upgrades.service rpi-eeprom-update.service
 systemctl enable cloudplay-data.service cloudplay-update-bootstrap.service cloudplay-updater.service \
     cloudplay-update-shutdown.service cloudplay-update-early-guard.service \
     cloudplay-maintenance-broker.service \

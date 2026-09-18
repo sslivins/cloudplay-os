@@ -261,6 +261,7 @@ def main():
     paths += [str(path) for path in frames]
     ota = {"enabled": False}
     if Path("/etc/cloudplay/ota-enabled").exists():
+        assert str(Path("/etc/systemd/system/rpi-eeprom-update.service").resolve()) == "/dev/null"
         config = json.loads(Path("/etc/cloudplay/updater.json").read_text())
         assert config["experimental_hardware_validation"] is False
         assert config["launcher_isolation_verified"] is False
