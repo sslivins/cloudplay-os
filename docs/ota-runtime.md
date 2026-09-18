@@ -244,7 +244,8 @@ Only an explicitly authorized local root operator may enable these flags.
 full signed metadata, selected release identity, pending slot/generated
 records, current/highest version, key floor, last-good identity, strikes, and
 candidate boot/deadline state. Writes use a private temporary file, file fsync,
-replace, and parent-directory fsync. `operation.lock` uses nonblocking flock;
+replace, and parent-directory fsync. `operation.lock` uses nonblocking flock
+with bounded retry for health samples;
 portable tests use the corresponding Windows file lock. Status reads do not
 take the operation lock. No second updater/helper can stage concurrently.
 
@@ -339,7 +340,8 @@ looping through a missing/corrupt control pointer. A failed last-good validation
 requires local recovery rather than a guessed boot selection.
 `shutdown` marks an explicit graceful candidate shutdown so later old-slot
 fallback does not consume a strike; daemon SIGTERM is not treated as proof of
-system shutdown.
+system shutdown. A recorded runtime or boot-local guard rollback still consumes
+a strike, even when its reboot also runs the graceful-shutdown hook.
 
 ## Parent systemd wiring and external prerequisites
 

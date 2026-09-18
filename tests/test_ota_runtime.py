@@ -374,6 +374,26 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(status["phase"], "rolled_back")
         self.assertEqual(status["strikes"], 0)
 
+    def test_boot_guard_rollback_is_a_strike_despite_shutdown_hook(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        self.platform.guard["attempted"] = True
+        self.runtime.shutdown()
+        self.platform.active = "A"
+        status = self.runtime.reconcile(boot_id="boot2")
+        self.assertEqual(status["phase"], "rolled_back")
+        self.assertEqual(status["strikes"], 1)
+        self.assertEqual(status["highest_version"], self.meta["version"])
+
+    def test_recorded_rollback_is_a_strike_despite_graceful_marker(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        self.runtime.shutdown()
+        state = self.runtime.journal.load()
+        state["pending"]["rollback_attempted"] = True
+        self.runtime.journal.save(state)
+        self.platform.active = "A"
+        status = self.runtime.reconcile(boot_id="boot2")
+        self.assertEqual(status["strikes"], 1)
+
     def test_operator_retry_cannot_bypass_pending_candidate(self):
         self.runtime.install()
         with self.assertRaisesRegex(UpdateError, "RECOVERY"):

@@ -268,7 +268,9 @@ class Runtime:
                     attempted = self.platform.candidate_guard_attempted(layout, pending)
                 if attempted:
                     graceful = (pending.get("boot_id") is not None
-                                and pending.get("graceful_shutdown") == pending["boot_id"])
+                                and pending.get("graceful_shutdown") == pending["boot_id"]
+                                and not pending.get("rollback_attempted")
+                                and not self.platform.candidate_guard_attempted(layout, pending))
                     self.journal.update(
                         phase="rolled_back", pending=None, strikes=state["strikes"] + (0 if graceful else 1),
                         error=None, notice="Update failed; returned to the previous version")
