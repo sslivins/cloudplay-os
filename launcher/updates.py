@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
 import queue
+import stat
 import sys
 import threading
 import time
 
 ENABLED = Path("/etc/cloudplay/ota-enabled")
-COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "dismiss"})
+COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "dismiss", "open", "close"})
 BUSY = frozenset({"checking", "downloading", "verifying", "staging", "installing",
                   "invalidating", "formatting", "copying", "publishing",
                   "staging_boot", "staging_root", "verifying_slot", "promoting",
@@ -19,8 +22,32 @@ def request(command):
     parent = str(Path(__file__).resolve().parents[1])
     if parent not in sys.path:
         sys.path.insert(0, parent)
+    if command in ("open", "close"):
+        from updater.maintenance import request as transition
+        transition(command)
+        return {"phase": "unknown"}
+    if os.getuid() != 450:
+        if command != "status":
+            raise ValueError("Use the trusted update session for update controls")
+        return public_status()
     from updater.client import request as send
     return send(command)
+
+
+def public_status(path=Path("/run/cloudplay-updater/status.json")):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022
+            or info.st_size > 65536 or not 0 <= time.time() - info.st_mtime <= 30):
+        raise ValueError("Update status is unsafe or stale")
+    with path.open("rb") as source:
+        data = source.read(65537)
+    if len(data) > 65536:
+        raise ValueError("Update status exceeds its size bound")
+    value = json.loads(data)
+    if not isinstance(value, dict):
+        raise ValueError("Invalid public update status")
+    return dict(value, requires_trusted_session=True,
+                install_enabled=False, can_cancel=False, can_restart=False)
 
 
 def summary(status):
@@ -74,6 +101,8 @@ def summary(status):
         lines.append(" ".join(notes.split())[:400])
     if status.get("gate") or status.get("mutation_enabled") is False:
         lines.append("Experimental preview: installation is locked until the safety gates pass.")
+    if status.get("requires_trusted_session"):
+        lines.append("Open Update Controls to enter a separate, browser-free system session.")
     return "\n".join(lines)
 
 
@@ -93,6 +122,8 @@ def badge(status):
 def actions(status):
     phase = status.get("phase", "unknown")
     result = []
+    if status.get("requires_trusted_session"):
+        return [("Open Update Controls", "open")]
     if phase not in BUSY:
         result.append(("Check for Updates", "check"))
     if phase == "available" and status.get("install_enabled") is True:

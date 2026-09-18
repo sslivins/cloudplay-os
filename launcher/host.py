@@ -45,6 +45,7 @@ class Browser:
     def __init__(self, state):
         self.state = private_directory(state)
         self.service = None
+        self.provider_lease = None
         # Recover an orphan after a killed/crashed Home process. The fixed user
         # unit owns the entire browser cgroup, not a reusable PID from a file.
         self.stop()
@@ -52,7 +53,10 @@ class Browser:
     def start(self, service):
         command = browser_command(service, self.state)
         self.stop()
-        subprocess.run([
+        if Path("/etc/cloudplay/ota-enabled").is_file():
+            self._lock_provider()
+        try:
+            subprocess.run([
             "/usr/bin/systemd-run", "--user", "--quiet", "--collect",
             "--unit=" + self.UNIT, "--service-type=exec",
             "--property=KillMode=control-group", "--property=TimeoutStopSec=2s",
@@ -62,8 +66,34 @@ class Browser:
             "--setenv=WAYLAND_DISPLAY=" + os.environ["WAYLAND_DISPLAY"],
             "--setenv=XDG_RUNTIME_DIR=" + os.environ["XDG_RUNTIME_DIR"],
             "--", *command,
-        ], check=True, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ], check=True, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except BaseException:
+            self._unlock_provider()
+            raise
         self.service = service
+
+    def _lock_provider(self):
+        import fcntl
+        from updates import public_status
+        path = Path("/run/cloudplay-updater/provider.lock")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise RuntimeError("Unsafe update/provider interlock")
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            if (Path("/run/cloudplay-maintenance/active").exists()
+                    or public_status().get("provider_launch_allowed") is not True):
+                raise RuntimeError("Update preparation prevents starting a provider")
+            self.provider_lease = fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _unlock_provider(self):
+        if self.provider_lease is not None:
+            os.close(self.provider_lease)
+            self.provider_lease = None
 
     def stop(self):
         subprocess.run(["/usr/bin/systemctl", "--user", "stop", self.UNIT],
@@ -71,6 +101,7 @@ class Browser:
         # "Unit not found" is expected on first boot / after --collect.
         if self.active():
             raise RuntimeError("Streaming browser did not stop")
+        self._unlock_provider()
         self.service = None
 
     def active(self):

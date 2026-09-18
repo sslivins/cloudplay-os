@@ -162,10 +162,10 @@ class Service:
             fail("ROOT", "daemon requires Linux root and SO_PEERCRED")
         config = self.runtime.config
         directory = Path(config.socket_path).parent
-        directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+        directory.mkdir(mode=0o755, parents=True, exist_ok=True)
         trusted_path(directory, directory=True)
         os.chown(directory, 0, config.socket_gid)
-        os.chmod(directory, 0o750)
+        os.chmod(directory, 0o755)
         provider_lock = directory / "provider.lock"
         if not provider_lock.exists():
             fd = os.open(provider_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)

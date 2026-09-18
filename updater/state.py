@@ -101,9 +101,9 @@ class Config:
     launcher_isolation_verified: bool = False
     isolation_evidence: str = ""
     hardware_evidence: str = ""
-    launcher_uid: int = 1000
-    browser_uid: int = 1001
-    socket_gid: int = 1000
+    launcher_uid: int = 450
+    browser_uid: int = 1000
+    socket_gid: int = 450
     socket_path: str = "/run/cloudplay-updater/control.sock"
     state_dir: str = "/data/cloudplay/update"
     keys_dir: str = "/usr/share/cloudplay/update-keys"

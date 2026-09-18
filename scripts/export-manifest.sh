@@ -47,10 +47,20 @@ if [[ -f /etc/cloudplay/ota-enabled ]]; then
         -S '/usr/bin/python3 /opt/cloudplay-build-inputs/check-launcher.py'
     test -f /run/cloudplay-config-check/updates-smoke.json
     install -m 644 /run/cloudplay-config-check/updates-smoke.json /usr/local/share/cloudplay/updates-smoke.json
+    install -d -m 700 -o cloudplay-update -g cloudplay-update /run/cloudplay-trusted-check
+    runuser -u cloudplay-update -- env XDG_RUNTIME_DIR=/run/cloudplay-trusted-check \
+        CLOUDPLAY_SMOKE_TRUSTED=1 \
+        CLOUDPLAY_SMOKE_RESULT=/run/cloudplay-trusted-check/trusted-smoke.json \
+        WLR_BACKENDS=headless WLR_RENDERER=pixman \
+        timeout --kill-after=5 20 dbus-run-session -- labwc -C /etc/cloudplay/update-labwc \
+        -S '/usr/bin/python3 /opt/cloudplay-build-inputs/check-launcher.py'
+    test -f /run/cloudplay-trusted-check/trusted-smoke.json
+    install -m 644 /run/cloudplay-trusted-check/trusted-smoke.json /usr/local/share/cloudplay/trusted-smoke.json
+    rm -rf /run/cloudplay-trusted-check
     python3 -B - <<'PY'
 import json
 from pathlib import Path
-for name in ("home-smoke.json", "updates-smoke.json"):
+for name in ("home-smoke.json", "updates-smoke.json", "trusted-smoke.json"):
     assert json.loads((Path("/usr/local/share/cloudplay") / name).read_text()) == {"passed": True}
 record = Path("/usr/share/cloudplay/release.json")
 release = json.loads(record.read_text())

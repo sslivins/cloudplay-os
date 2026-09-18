@@ -32,8 +32,7 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
   slot's** profile directory at `/home/cloudplay/.config/cloudplay` before
   launcher/provider startup, including fallback boots with DT tryboot zero.
   The profile owner must equal `browser_uid`, not automatically UID 1000.
-  Current firstboot code using owner 1000 must be reconciled with the separate
-  browser identity before enabling mutation.
+  Gaming retains browser UID 1000; the isolated maintenance UI uses UID 450.
 * The trusted provider launcher must hold a **shared flock for the provider's
   entire lifetime** on `/run/cloudplay-updater/provider.lock` (beside the Unix
   socket, not inside the private 0700 journal directory). Runtime holds
@@ -57,8 +56,8 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
   signed hash and replaces only slot/root and firstboot-resize arguments.
   Console/Plymouth and other OS boot options therefore survive an OTA.
 * Launcher/compositor publish bounded JSON heartbeat files at
-  `/run/cloudplay/launcher-heartbeat.json` and
-  `/run/cloudplay/compositor-heartbeat.json`:
+  `/run/cloudplay-update-ui/launcher-heartbeat.json` and
+  `/run/cloudplay-update-ui/compositor-heartbeat.json`:
   `{"boot_id":"<kernel boot UUID>","monotonic":123.0}`. They must update more
   often than every 30 seconds, including with a disconnected display.
   Their identities and parent directories must prevent browser forgery.
@@ -79,6 +78,32 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
   profile using the actually mounted root slot, and health verifies its mapping.
 
 ## CLI and client API
+
+### Trusted maintenance session
+
+The normal gaming seat (UID 1000, including network setup Chromium) reads only
+the root-owned public `status.json`. Its Updates page can request `open` on
+the separate maintenance broker; this is not an install authorization.
+The broker holds the provider interlock, stops greetd, terminates the gaming
+user's sessions/user manager, and refuses to start maintenance if any process
+with that UID remains.
+
+`cloudplay-maintenance.service` starts labwc and the native update UI as
+`cloudplay-update` (UID/GID 450) on VT8 with a private 0700 runtime. No browser
+is launched there. The old gaming UID cannot connect to its Wayland socket,
+inject compositor input, write its heartbeats, or authenticate to updater IPC.
+Only root and UID 450 may request `close`; close is refused while the updater
+holds an operation or a staged/candidate update prevents gaming.
+
+Candidate boots start this session automatically. GTK publishes its event-loop
+heartbeat; a separate bounded subprocess completes a real Wayland round trip
+before publishing the compositor heartbeat. Health verifies owner 450 and
+private modes, not just timestamps. Successful confirmation enables Return to
+Main Menu; returning stops the private compositor before restoring greetd.
+
+The maintenance broker has only `open`/`close`. There are no caller-selected
+users, units, commands, paths, URLs or flags. Its public local socket checks
+kernel peer credentials before executing either fixed transition.
 
 ```text
 python3 -m updater.service --help
@@ -142,7 +167,7 @@ its own 30-minute forced-check limit and persistent backoff.
 
 The daemon authenticates the kernel's Linux `SO_PEERCRED`, not a UID claimed in
 JSON. Only root and `launcher_uid` are allowed. The socket directory is
-0750 root:`socket_gid`; the socket is 0660 root:`socket_gid`. There are no
+0755 root:`socket_gid`; the socket is 0660 root:`socket_gid`. There are no
 TCP listeners. Different processes with the same UID are **not** isolated.
 The boolean assertion is an operator gate, not an implementation of AppArmor
 or a substitute for verifying the installed UID/service policy.
@@ -177,9 +202,9 @@ non-root writable. Paths must be absolute and contain no whitespace.
   "hardware_evidence": "",
   "launcher_isolation_verified": false,
   "isolation_evidence": "",
-  "launcher_uid": 1000,
-  "browser_uid": 1001,
-  "socket_gid": 1000,
+  "launcher_uid": 450,
+  "browser_uid": 1000,
+  "socket_gid": 450,
   "socket_path": "/run/cloudplay-updater/control.sock",
   "state_dir": "/data/cloudplay/update",
   "keys_dir": "/usr/share/cloudplay/update-keys",
@@ -307,7 +332,7 @@ system shutdown.
 
 ## Parent systemd wiring and external prerequisites
 
-No installed unit is supplied/changed by this runtime-owned work. Parent must:
+The installed image units enforce the following ordering:
 
 * Start `python3 -m updater.service early-guard` as root **after the actual
   `/boot/firmware` mount, before `cloudplay-data.service` starts**, independently
@@ -402,9 +427,9 @@ remain mandatory; the hardware gate stays disabled until explicitly approved.
 * Missing global control demonstrably boots first bootable A despite B mirrors.
   Mirrors are diagnostics, not recovery guarantees. Withholding config is the
   required firmware gate; a sentinel alone is not one.
-* Launcher/browser separation, provider flock enforcement, profile ownership,
-  heartbeat trust, systemd ordering, persistent network binds and the artifact
-  mirror exemption must be installed/tested by the parent before enablement.
+* The dedicated UID-450 compositor, provider interlock, heartbeat ownership,
+  systemd ordering and persistent network binds require device acceptance
+  before approval flags are enabled.
 * During inactive-slot overwrite there is only one intact OS. Independent
   loss of the running slot still requires reflash.
 * Both-slot profile copy/rollback and real provider sign-ins require device

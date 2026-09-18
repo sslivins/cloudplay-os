@@ -61,7 +61,7 @@ class SigningTests(unittest.TestCase):
                 minimum_source_version="0.1.0-beta.3", source_commit="a" * 40,
                 platform="cm5", channel="beta", workflow="local-integration-test",
                 created_at="2026-09-19T00:00:00Z", data_schema_min=1, data_schema_max=1)
-            catalog = builder.build(args)
+            catalog, built_metadata = builder.build(args)
             bundle = args.output / catalog["name"]
             signature = Path(str(bundle) + ".minisig")
             constraints = dict(platform="cm5", channel="beta",
@@ -69,6 +69,7 @@ class SigningTests(unittest.TestCase):
                                minimum_key_epoch=1, data_schema=1)
             metadata = artifacts.verify_bundle(
                 bundle, signature, keys, work / "verified", **constraints)
+            self.assertEqual(metadata, built_metadata)
             artifacts.verify_tree(work / "verified", metadata)
             self.assertEqual((work / "verified/root/case").read_bytes(), b"lower")
             self.assertEqual((work / "verified/root/bin/example").stat().st_mode & 0o777, 0o751)

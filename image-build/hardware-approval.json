@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "experimental_build_approved": true,
+  "production_approved": false,
+  "physical_acceptance": "incomplete",
+  "reviewed_by": "Copilot: experimental CM5 validation only",
+  "evidence": "https://github.com/sslivins/cloudplay-os/issues/1#issuecomment-5724743513",
+  "platforms": {
+    "cm5": {
+      "minimum_eeprom": "2026-02-23",
+      "boot_order": "0xf2461",
+      "tryboot_required": true
+    }
+  }
+}

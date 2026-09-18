@@ -27,7 +27,7 @@ GEOMETRY = ((4, 64), (68, 1024), (1092, 1024), (2116, 8192),
 LABELS = ("boot-control", "boot-A", "boot-B", "root-A", "root-B", "data")
 BOOT = {"A": 2, "B": 3}
 ROOT = {"A": 4, "B": 5}
-HEALTH_UNITS = ("cloudplay-network.service", "cloudplay-startup.service", "greetd.service")
+HEALTH_UNITS = ("cloudplay-network.service", "cloudplay-startup.service", "cloudplay-maintenance.service")
 
 
 def run(args, *, timeout=30, allowed=(0,)):
@@ -715,8 +715,18 @@ class LinuxPlatform:
         boot_id = self.boot_id()
         if boot_id != pending["boot_id"]:
             fail("HEALTH", "candidate boot identity changed without reconciliation")
+        heartbeat_dir = Path("/run/cloudplay-update-ui")
+        info = heartbeat_dir.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != self.config.launcher_uid
+                or stat.S_IMODE(info.st_mode) != 0o700):
+            fail("HEALTH", "trusted compositor runtime ownership/mode mismatch")
         for name in ("launcher", "compositor"):
-            heartbeat = read_json(Path("/run/cloudplay") / (name + "-heartbeat.json"), 4096)
+            path = heartbeat_dir / (name + "-heartbeat.json")
+            info = path.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != self.config.launcher_uid
+                    or stat.S_IMODE(info.st_mode) != 0o600):
+                fail("HEALTH", "heartbeat is not owned by the isolated update identity")
+            heartbeat = read_json(path, 4096)
             if (heartbeat.get("boot_id") != boot_id or type(heartbeat.get("monotonic")) not in (int, float)
                     or not 0 <= current - heartbeat["monotonic"] <= 30):
                 fail("HEALTH", f"missing/stale {name} heartbeat")

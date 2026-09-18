@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <core><gap>0</gap><reuseOutputMode>yes</reuseOutputMode></core>
+  <keyboard>
+    <keybind key="W-Return"><action name="None"/></keybind>
+  </keyboard>
+  <mouse>
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+    <context name="Root"><mousebind button="Right" action="Press"><action name="None"/></mousebind></context>
+  </mouse>
+  <windowSwitcher><osd show="no"/></windowSwitcher>
+</labwc_config>

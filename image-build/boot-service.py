@@ -8,7 +8,18 @@ import sys
 
 sys.path.insert(0, "/usr/local/lib/cloudplay")
 from updater.runtime import Runtime
-from updater.state import Config, UpdateError
+from updater.state import Config, UpdateError, atomic_write, trusted_path
+
+
+def candidate_session(status):
+    if status.get("phase") not in ("tryboot_running", "promoting"):
+        return
+    directory = Path("/run/cloudplay-maintenance")
+    directory.mkdir(mode=0o755, exist_ok=True)
+    trusted_path(directory, directory=True)
+    atomic_write(directory / "active", b"candidate-confirmation-session\n")
+    subprocess.run(["systemctl", "--no-block", "start", "cloudplay-maintenance.service"],
+                   check=True, timeout=10)
 
 
 def execute(command, runtime):
@@ -32,7 +43,9 @@ def execute(command, runtime):
         logging.warning("Physical OTA is disabled: %s", exc)
         return {"mutation_disabled": True, "reason": exc.code}
     if command == "bootstrap":
-        return runtime.reconcile()
+        result = runtime.reconcile()
+        candidate_session(result)
+        return result
     if command == "deadline":
         return runtime.health(deadline_only=True)
     if command in ("health", "shutdown"):

@@ -2,6 +2,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -45,6 +47,26 @@ def table():
 
 
 class GeometryTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("mcopy") and shutil.which("mkfs.vfat"),
+                         "requires native userspace FAT tools")
+    def test_fat_bytes_and_long_names_survive_actual_filesystem_roundtrip(self):
+        with tempfile.TemporaryDirectory(prefix="cloudplay-fat-") as name:
+            base = Path(name)
+            image, source, readback = base / "boot.img", base / "source", base / "readback"
+            with image.open("xb") as output:
+                output.truncate(64 * 1024**2)
+            source.mkdir()
+            (source / "overlays").mkdir()
+            (source / "config.txt").write_bytes(b"arm_64bit=1\n")
+            (source / "overlays/a-long-overlay-name.dtbo").write_bytes(b"verified overlay")
+            subprocess.run(["mkfs.vfat", "-F", "32", str(image)], check=True, timeout=30,
+                           stdout=subprocess.DEVNULL)
+            free = assembler.write_fat(image, source, readback)
+            self.assertGreater(free, 60 * 1024**2)
+            self.assertEqual((readback / "config.txt").read_bytes(), b"arm_64bit=1\n")
+            self.assertEqual((readback / "overlays/a-long-overlay-name.dtbo").read_bytes(),
+                             b"verified overlay")
+
     def test_assembler_refuses_shared_device_identity(self):
         with tempfile.TemporaryDirectory() as name:
             base = Path(name)
@@ -79,10 +101,11 @@ class GeometryTests(unittest.TestCase):
                 "cm5": {"minimum_eeprom": "2026-02-23", "boot_order": "0xf2461"}}}, "cm5", 1)
         self.assertFalse(value["launcher_isolation_verified"])
         self.assertFalse(value["experimental_hardware_validation"])
-        self.assertEqual(value["launcher_uid"], value["browser_uid"])
-        approved_flags = value | {"launcher_isolation_verified": True,
+        self.assertEqual(value["launcher_uid"], 450)
+        self.assertEqual(value["browser_uid"], 1000)
+        approved_flags = value | {"launcher_uid": 1000, "launcher_isolation_verified": True,
                                   "experimental_hardware_validation": True,
-                                  "isolation_evidence": "not an actual boundary"}
+                                  "isolation_evidence": "incorrect same-UID approval"}
         with self.assertRaisesRegex(boot_service.UpdateError, "ISOLATION_GATE"):
             configure.Config(**approved_flags).mutation_gate()
 

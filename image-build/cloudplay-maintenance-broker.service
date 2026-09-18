@@ -1,0 +1,17 @@
+[Unit]
+Description=Enter or leave the isolated Cloudplay update session
+Requires=cloudplay-data.service cloudplay-updater.service
+After=cloudplay-data.service cloudplay-updater.service cloudplay-update-bootstrap.service
+Before=greetd.service
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=/usr/local/lib/cloudplay
+ExecStart=/usr/bin/python3 -B -m updater.maintenance
+Restart=on-failure
+RestartSec=3
+UMask=0077
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

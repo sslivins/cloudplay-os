@@ -62,6 +62,7 @@ step = 0
 errors = []
 done = False
 update_mode = os.environ.get("CLOUDPLAY_SMOKE_UPDATES") == "1"
+trusted_mode = os.environ.get("CLOUDPLAY_SMOKE_TRUSTED") == "1"
 
 
 class Updates:
@@ -89,7 +90,50 @@ class Updates:
         pass
 
 
-updates = Updates() if update_mode else None
+updates = Updates() if update_mode or trusted_mode else None
+heartbeats = None
+if trusted_mode:
+    from heartbeat import Heartbeats
+    heartbeats = Heartbeats(Path(os.environ["XDG_RUNTIME_DIR"]))
+
+
+def drive_trusted(window, buttons, titles):
+    global done
+    assert not browser.starts, "Trusted session started a browser"
+    if step == 0:
+        assert "SYSTEM UPDATES" in titles and len(buttons) == 3
+        buttons[1].clicked()
+    elif step == 1:
+        assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
+        pads.actions = ["back"]
+    elif step == 2:
+        assert "SYSTEM UPDATES" in titles
+        buttons[1].clicked()
+        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation[1].clicked()
+    elif step == 3:
+        assert updates.commands == ["install"] and len(buttons) == 2
+        buttons[1].clicked()
+        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation[0].clicked()
+    elif step == 4:
+        updates.status.update(phase="tryboot_running", can_restart=False)
+        updates.changed = True
+    elif step == 5:
+        assert "SYSTEM UPDATES" in titles and len(buttons) == 1
+        updates.status.update(phase="promoted", provider_launch_allowed=True)
+        updates.changed = True
+    elif step == 6:
+        assert len(buttons) == 2
+        for name in ("launcher", "compositor"):
+            path = Path(os.environ["XDG_RUNTIME_DIR"]) / (name + "-heartbeat.json")
+            assert path.is_file(), "Missing real Wayland/GTK heartbeat: " + name
+        buttons[-1].clicked()
+        assert updates.commands == ["install", "close"]
+        done = True
+        Gtk.main_quit()
+        return False
+    return True
 
 
 def drive_updates(window, children, buttons, titles):
@@ -151,6 +195,10 @@ def drive():
             "MAIN MENU", "GeForce NOW", "Xbox Cloud Gaming",
             "Streaming browser did not close")), "")
         buttons = [w for w in children if isinstance(w, Gtk.Button)]
+        if trusted_mode:
+            keep_running = drive_trusted(window, buttons, titles)
+            step += 1
+            return keep_running
         if update_mode:
             keep_running = drive_updates(window, children, buttons, titles)
             step += 1
@@ -218,7 +266,7 @@ def timeout():
 
 GLib.timeout_add(150, drive)
 GLib.timeout_add_seconds(12, timeout)
-main.run(browser, control, pads, updates)
+main.run(browser, control, pads, updates, trusted_updates=trusted_mode, heartbeats=heartbeats)
 if errors:
     raise errors[0]
 assert done and browser.service is None

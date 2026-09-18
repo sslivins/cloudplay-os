@@ -78,7 +78,7 @@ def write_tar(path: Path, metadata: dict, sources: dict):
                     tar.addfile(header, source)
 
 
-def build(args) -> dict:
+def build(args) -> tuple[dict, dict]:
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     repository = Path(__file__).resolve().parents[1]
@@ -157,7 +157,7 @@ def build(args) -> dict:
         verified = artifacts.verify_bundle(bundle, signature, keys, work / "verified", **constraints)
         if verified != meta:
             raise artifacts.ArtifactError("BUILD", "round-trip metadata mismatch")
-        return catalog
+        return catalog, verified
     except BaseException:
         for path in created:
             path.unlink(missing_ok=True)
@@ -179,7 +179,8 @@ def main():
     parser.add_argument("--created-at", default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     args = parser.parse_args()
     try:
-        print(artifacts.canonical_json(build(args)).decode())
+        catalog, _ = build(args)
+        print(artifacts.canonical_json(catalog).decode())
     except (artifacts.ArtifactError, OSError, subprocess.SubprocessError) as exc:
         parser.exit(1, f"OTA build failed: {exc}\n")
 

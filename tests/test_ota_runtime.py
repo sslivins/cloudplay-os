@@ -385,7 +385,7 @@ class StateTests(unittest.TestCase):
     def test_same_uid_is_not_isolation(self):
         config = replace(Config(), experimental_hardware_validation=True,
                          hardware_evidence="test", launcher_isolation_verified=True,
-                         isolation_evidence="test", browser_uid=1000)
+                         isolation_evidence="test", launcher_uid=1000, browser_uid=1000)
         with self.assertRaisesRegex(UpdateError, "ISOLATION_GATE"):
             config.mutation_gate()
 

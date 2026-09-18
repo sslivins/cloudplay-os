@@ -1,0 +1,41 @@
+[Unit]
+Description=Isolated Cloudplay update controls
+Requires=cloudplay-updater.service
+After=cloudplay-updater.service cloudplay-update-bootstrap.service systemd-user-sessions.service
+After=plymouth-quit.service cloudplay-startup.service
+Wants=plymouth-quit.service cloudplay-startup.service
+Conflicts=greetd.service
+OnFailure=cloudplay-update-recovery.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=cloudplay-update
+Group=cloudplay-update
+SupplementaryGroups=video render cloudplay-gamepad
+PAMName=login
+RuntimeDirectory=cloudplay-update-ui
+RuntimeDirectoryMode=0700
+StateDirectory=cloudplay-update-ui
+StateDirectoryMode=0700
+Environment=HOME=/var/lib/cloudplay-update-ui
+Environment=XDG_RUNTIME_DIR=/run/cloudplay-update-ui
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_SESSION_CLASS=user
+Environment=XDG_SEAT=seat0
+Environment=XDG_VTNR=8
+Environment=XDG_CURRENT_DESKTOP=labwc
+TTYPath=/dev/tty8
+StandardInput=tty
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+ExecStartPre=+/usr/bin/chvt 8
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/labwc -C /etc/cloudplay/update-labwc -S "/usr/bin/python3 -B /usr/local/lib/cloudplay/launcher/maintenance.py"
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+LimitCORE=0

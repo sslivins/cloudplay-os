@@ -44,20 +44,20 @@ class ServiceTests(unittest.TestCase):
         runtime = Mock(config=Config())
         service = Service(runtime)
         with self.assertRaisesRegex(UpdateError, "IPC_AUTH"):
-            service.dispatch("status", 1001)
+            service.dispatch("status", 1000)
         runtime.status.assert_not_called()
 
     def test_status_works_while_hardware_gate_disabled(self):
         runtime = Mock(config=Config())
         runtime.status.return_value = {"phase": "idle", "mutation_enabled": False}
-        result = Service(runtime).dispatch("status", 1000)
+        result = Service(runtime).dispatch("status", 450)
         self.assertFalse(result["mutation_enabled"])
 
     def test_install_disabled_and_no_worker_started(self):
         runtime = Mock(config=Config())
         service = Service(runtime)
         with self.assertRaisesRegex(UpdateError, "HARDWARE_GATE"):
-            service.dispatch("install", 1000)
+            service.dispatch("install", 450)
         self.assertIsNone(service._worker)
 
     def test_worker_creation_failure_does_not_leave_operation_locked(self):
@@ -111,9 +111,9 @@ class ServiceTests(unittest.TestCase):
     def test_rate_limit_mutations(self):
         runtime = Mock(config=Config())
         service = Service(runtime)
-        service.dispatch("cancel", 1000)
+        service.dispatch("cancel", 450)
         with self.assertRaisesRegex(UpdateError, "RATE_LIMIT"):
-            service.dispatch("cancel", 1000)
+            service.dispatch("cancel", 450)
         runtime.cancel.assert_called_once()
 
     def test_rejected_command_cannot_disable_candidate_deadline_phase(self):

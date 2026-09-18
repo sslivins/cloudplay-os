@@ -29,7 +29,8 @@ def run(*args, **kwargs):
 
 
 def output(*args):
-    return subprocess.check_output(list(map(str, args)), text=True, timeout=60).strip()
+    return subprocess.check_output(list(map(str, args)), text=True, timeout=60,
+                                   env={**os.environ, "LC_ALL": "C"}).strip()
 
 
 def create_image(path):
@@ -73,6 +74,26 @@ def validate_inputs(boot, root):
     return command_template.read_text(encoding="ascii")
 
 
+def write_fat(device, source, readback):
+    """Use userspace FAT IO; image builders need no host vfat kernel module."""
+    children = sorted(source.iterdir())
+    if not children:
+        raise ValueError("FAT: refusing empty boot filesystem")
+    if any(path.is_symlink() for path in source.rglob("*")):
+        raise ValueError("FAT: symlink source is not representable")
+    run("mcopy", "-s", "-p", "-i", device, *children, "::/")
+    readback.mkdir(mode=0o755)
+    run("mcopy", "-s", "-i", device, "::*", readback)
+    for path in (readback, *readback.rglob("*")):
+        path.chmod(0o755 if path.is_dir() else 0o644)
+    listing = output("mdir", "-i", device, "::")
+    match = re.search(r"(?m)^\s*([\d ,]+)\s+bytes free\s*$", listing)
+    if not match:
+        raise ValueError("FAT: cannot verify remaining filesystem capacity")
+    free = int(re.sub(r"\D", "", match[1]))
+    return free
+
+
 def build():
     if os.environ.get("CLOUDPLAY_OTA_EXPERIMENTAL") != "1" or os.geteuid() != 0:
         raise ValueError("OPT_IN: experimental root-only image assembly")
@@ -98,10 +119,11 @@ def build():
         secret_key=Path(env["CLOUDPLAY_OTA_SECRET_KEY"]),
         public_key=REPO / "image-build/keys" / f'epoch-{env["CLOUDPLAY_OTA_KEY_EPOCH"]}-primary.pub',
     )
-    catalog = builder.build(args)
+    catalog, signed_metadata = builder.build(args)
     expected, _ = builder.inventory(boot, root)
-    import hashlib
-    manifest_digest = hashlib.sha256(canonical_json(expected)).hexdigest()
+    if expected != signed_metadata["manifest"]:
+        raise ValueError("IMAGE_MANIFEST: source changed after signed bundle creation")
+    manifest_digest = signed_metadata["manifest_sha256"]
     image = release / f"cloudplay-os-{args.version}-{args.platform}-experimental.img"
     create_image(image)
     lines = ["label: gpt", "unit: sectors", "sector-size: 512"]
@@ -131,15 +153,19 @@ def build():
                     "lazy_itable_init=0,lazy_journal_init=0", device)
             mount = work / name
             mount.mkdir()
-            options = "uid=0,gid=0,fmask=0133,dmask=0022" if kind == "vfat" else "defaults"
-            run("mount", "-o", options, device, mount)
-            mounts.append(mount)
             if kind == "ext4":
+                run("mount", device, mount)
+                mounts.append(mount)
                 (mount / "lost+found").rmdir()
             if output("blkid", "-p", "-s", "LABEL", "-o", "value", device) != label:
                 raise ValueError("LAYOUT: filesystem label mismatch after format")
         (work / "boot-control/autoboot.txt").write_text(AUTOBOOT)
         (work / "boot-control/config.txt").write_text("# Cloudplay experimental selector\n")
+        control_readback = work / "control-readback"
+        write_fat(f"{loop}p1", work / "boot-control", control_readback)
+        if {p.name: p.read_bytes() for p in control_readback.iterdir()} != {
+                p.name: p.read_bytes() for p in (work / "boot-control").iterdir()}:
+            raise ValueError("GENERATED: boot-control readback mismatch")
         for slot in ("A", "B"):
             target_boot, target_root = work / f"boot-{slot}", work / f"root-{slot}"
             run("rsync", "-rt", str(boot) + "/", str(target_boot) + "/")
@@ -161,7 +187,12 @@ def build():
                 "schema": 1, "slot": slot, "version": args.version,
                 "manifest_sha256": manifest_digest,
             }))
-            actual, _ = builder.inventory(target_boot, target_root)
+            boot_readback = work / f"boot-{slot}-readback"
+            boot_free = write_fat(f"{loop}p{2 if slot == 'A' else 3}", target_boot, boot_readback)
+            for name in ("cmdline.txt", "autoboot.txt", "slot-valid.json"):
+                if (target_boot / name).read_bytes() != (boot_readback / name).read_bytes():
+                    raise ValueError(f"GENERATED: FAT {name} readback mismatch")
+            actual, _ = builder.inventory(boot_readback, target_root)
             if actual != expected:
                 changed = sorted(k for k in actual.keys() | expected.keys()
                                  if actual.get(k) != expected.get(k))
@@ -173,7 +204,7 @@ def build():
             if (target_boot / "autoboot.txt").read_text() != AUTOBOOT:
                 raise ValueError("GENERATED: autoboot mirror mismatch")
             usage = shutil.disk_usage(target_root)
-            if usage.used > usage.total * .75 or shutil.disk_usage(target_boot).used > 1024 * MIB * .75:
+            if usage.used > usage.total * .75 or boot_free < 1024 * MIB * .25:
                 raise ValueError("SPACE: mounted payload exceeds 75% slot budget")
         persistent = work / "data/cloudplay"
         persistent.mkdir(mode=0o755)

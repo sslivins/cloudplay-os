@@ -68,9 +68,11 @@ Before pi-gen runs, `image-build/preflight.py` requires:
   workflow identity through the `CLOUDPLAY_OTA_*` variables checked by
   preflight.
 
-No production trust roots or hardware approval are supplied by this source
-tree. Never add a private key, a reusable lab private key, or a generated
-device SSH identity to the repository or release artifacts.
+The public signing/recovery keys and experimental CM5 hardware policy are
+versioned in this tree. Private keys are held outside the checkout and never
+copied to test devices or release assets. Stable/production approval still
+requires independently held recovery-key custody and completed hardware
+acceptance; the checked-in policy explicitly denies production approval.
 
 The export snapshots the exact pi-gen boot/root inputs. Both slots and the
 signed bundle are derived from that snapshot; generated identity, fstab and
@@ -78,6 +80,10 @@ cmdline files are checked separately. Assembly accepts only a newly created
 regular image file, verifies its loop backing file before formatting, compares
 both mounted slot inventories, and emits checksums and provenance with
 `production_baseline: false`. It never formats a caller-supplied physical disk.
+FAT partitions are written and read back with `mtools`; the host needs no
+vfat kernel module. Ext4 partitions are mounted only through the verified
+new-image loop device. Assembly compares the inputs to the metadata returned
+by the signed-bundle round trip before copying either slot.
 
 ## Validation and release status
 
@@ -100,10 +106,16 @@ confirmation failure and watchdog rollback, cold boots, and interrupted
 partition/control writes. Do not label an experimental image production-ready
 or close the OTA acceptance issue before those gates pass.
 
-The current integration intentionally keeps the launcher and streaming browser
-on UID 1000 and sets both physical-approval flags false. It is a discovery/UI
-preview, not an enabled installer. The provider-lifetime flock and trusted
-launcher/compositor heartbeats still need to be wired with a real identity
-boundary before mutation can be enabled. Changing boolean flags alone is not
-an isolation implementation; the runtime also rejects equal launcher/browser
-UIDs.
+Gaming, audio, provider profiles, and the ordinary Main Menu retain UID 1000.
+That session can only read updater status and request entry into update controls.
+The root transition broker closes the gaming seat and user manager, confirms
+no UID-1000 process remains, and opens a private compositor/native UI as
+`cloudplay-update` (UID/GID 450) on VT8. Only this identity and root can control
+the updater. There is no browser in the trusted compositor's 0700 runtime.
+
+The provider interlock covers the streaming session. Candidate boots enter
+the isolated update session automatically and supply fresh GTK and real
+Wayland-roundtrip heartbeats during confirmation. Returning to gaming is
+refused while an update/candidate requires completion. Factory approval flags
+remain false until the particular build/device is explicitly validated;
+ordinary menu or web requests cannot toggle them.

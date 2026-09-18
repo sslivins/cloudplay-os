@@ -51,7 +51,7 @@ def main():
     run(browser, control, Gamepads(), Updates() if OTA_ENABLED.is_file() else None)
 
 
-def run(browser, control, pads, updates=None):
+def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbeats=None):
     os.environ["GDK_BACKEND"] = "wayland"
     import gi
     gi.require_version("Gtk", "3.0")
@@ -287,7 +287,15 @@ def run(browser, control, pads, updates=None):
         choices = [(label, lambda command=command: update_action(command),
                     "software-update-available-symbolic", False)
                    for label, command in update_actions(updates.status)]
-        choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
+        if trusted_updates:
+            if updates.status.get("provider_launch_allowed") is True:
+                choices.append(("Return to Main Menu", lambda: submit_update("close"),
+                                "go-home-symbolic", True))
+            if not choices:
+                choices.append(("Refresh Status", lambda: submit_update("status"),
+                                "view-refresh-symbolic", False))
+        else:
+            choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
         message = note or updates.error or update_summary(updates.status)
         show("SYSTEM UPDATES", choices, message)
         updates_screen = True
@@ -314,6 +322,9 @@ def run(browser, control, pads, updates=None):
 
     def home(note=""):
         nonlocal confirming, recovering
+        if trusted_updates:
+            show_updates(note)
+            return
         try:
             browser.stop()
         except (OSError, RuntimeError, subprocess.SubprocessError):
@@ -403,6 +414,8 @@ def run(browser, control, pads, updates=None):
         if closing:
             Gtk.main_quit()
             return False
+        if heartbeats is not None:
+            heartbeats.tick()
         if time.monotonic() >= next_check:
             next_check = time.monotonic() + 1
             try:
@@ -443,6 +456,8 @@ def run(browser, control, pads, updates=None):
             control.close()
             if updates is not None:
                 updates.close()
+            if heartbeats is not None:
+                heartbeats.close()
 
 
 if __name__ == "__main__":

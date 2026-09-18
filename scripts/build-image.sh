@@ -30,7 +30,7 @@ rm -rf build/pi-gen/export-image/01-user-rename
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
 mkdir -p build/pi-gen/cloudplay-inputs/onboarding
 mkdir -p build/pi-gen/cloudplay-inputs/launcher
-cp launcher/{main.py,host.py,gamepad.py,updates.py} build/pi-gen/cloudplay-inputs/launcher/
+cp launcher/{main.py,host.py,gamepad.py,updates.py,maintenance.py,heartbeat.py} build/pi-gen/cloudplay-inputs/launcher/
 cp -r launcher/assets build/pi-gen/cloudplay-inputs/launcher/
 cp onboarding/{network.py,service.py,client.py,readiness.py,boot.py,setup.html,setup.js,setup.css} \
     build/pi-gen/cloudplay-inputs/onboarding/
@@ -43,6 +43,7 @@ if [[ "${CLOUDPLAY_OTA_EXPERIMENTAL:-0}" == 1 ]]; then
         build/pi-gen/cloudplay-inputs/image-build/
     cp image-build/*.service image-build/*.timer build/pi-gen/cloudplay-inputs/image-build/
     cp image-build/cloudplay-updater-greetd.conf build/pi-gen/cloudplay-inputs/image-build/
+    cp image-build/update-labwc-rc.xml build/pi-gen/cloudplay-inputs/image-build/
     cp image-build/keys/*.pub build/pi-gen/cloudplay-inputs/image-build/keys/
     cp image-build/hardware-approval.json build/pi-gen/cloudplay-inputs/image-build/
     cp scripts/install-ota.sh build/pi-gen/cloudplay-inputs/

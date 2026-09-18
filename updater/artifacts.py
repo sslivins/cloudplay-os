@@ -317,6 +317,8 @@ def validate_metadata(meta: dict, *, platform: str, channel: str,
                 _fail("MANIFEST", "invalid file size/hash")
             sizes[name.split("/")[0]] += record["size"]
         elif kind == "symlink":
+            if name.startswith("boot/"):
+                _fail("MANIFEST", "FAT payload cannot contain symlinks")
             fields.add("target")
             _link(name, record.get("target"))
         elif kind != "directory":

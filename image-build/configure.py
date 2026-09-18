@@ -19,7 +19,7 @@ def configuration(approval, platform, epoch):
         hardware_evidence=str(approval["evidence"]),
         launcher_isolation_verified=False,
         isolation_evidence="",
-        launcher_uid=1000, browser_uid=1000, socket_gid=1000,
+        launcher_uid=450, browser_uid=1000, socket_gid=450,
         platform=platform, channel="beta", minimum_key_epoch=epoch,
         minimum_eeprom=policy["minimum_eeprom"], boot_order=policy["boot_order"])
     Config(**value).validate()
