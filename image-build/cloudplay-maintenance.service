@@ -32,7 +32,7 @@ TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
 ExecStartPre=+/usr/bin/chvt 8
-ExecStart=/usr/bin/dbus-run-session -- /usr/bin/labwc -C /etc/cloudplay/update-labwc -S "/usr/bin/python3 -B /usr/local/lib/cloudplay/launcher/maintenance.py"
+ExecStart=/usr/bin/env XDG_RUNTIME_DIR=/run/cloudplay-update-ui /usr/bin/dbus-run-session -- /usr/bin/labwc -C /etc/cloudplay/update-labwc -S "/usr/bin/python3 -B /usr/local/lib/cloudplay/launcher/maintenance.py"
 Restart=always
 RestartSec=3
 TimeoutStopSec=10

@@ -20,6 +20,12 @@ CONFIG = replace(Config(), launcher_uid=450, browser_uid=1000, socket_gid=450)
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_runtime_directory_is_pinned_after_pam_environment(self):
+        unit = (Path(__file__).resolve().parents[1]
+                / "image-build/cloudplay-maintenance.service").read_text()
+        self.assertIn("PAMName=login", unit)
+        self.assertIn("ExecStart=/usr/bin/env XDG_RUNTIME_DIR=/run/cloudplay-update-ui ", unit)
+
     def test_browser_can_only_request_trusted_screen_not_actions_or_exit(self):
         m.authorize(1000, "open", CONFIG)
         m.authorize(450, "open", CONFIG)
