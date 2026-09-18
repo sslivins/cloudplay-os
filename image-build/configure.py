@@ -39,7 +39,8 @@ def main():
     release = dict(
         version=os.environ["CLOUDPLAY_OTA_VERSION"],
         source_commit=subprocess.check_output(
-            ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True, timeout=30).strip(),
+            ["git", "-c", f"safe.directory={REPO}", "-C", str(REPO), "rev-parse", "HEAD"],
+            text=True, timeout=30).strip(),
         launcher_smoke_passed=False)
     with args.output.with_name("ota-release.json").open("x") as output:
         json.dump(release, output, sort_keys=True)

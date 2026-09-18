@@ -74,6 +74,16 @@ def validate_inputs(boot, root):
     return command_template.read_text(encoding="ascii")
 
 
+def validate_release(root, version, source_commit):
+    record = safe_child(root, "usr/share/cloudplay/release.json")
+    if not stat.S_ISREG(record.lstat().st_mode) or record.stat().st_size > 4096:
+        raise ValueError("SOURCE: invalid payload release identity")
+    release = json.loads(record.read_text())
+    if (release.get("version") != version or release.get("source_commit") != source_commit
+            or release.get("launcher_smoke_passed") is not True):
+        raise ValueError("SOURCE: payload version/source or launcher smoke does not match")
+
+
 def write_fat(device, source, readback):
     """Use userspace FAT IO; image builders need no host vfat kernel module."""
     children = sorted(source.iterdir())
@@ -111,7 +121,7 @@ def build():
         boot=boot, root=root, output=release,
         version=env["CLOUDPLAY_OTA_VERSION"],
         minimum_source_version=env["CLOUDPLAY_OTA_MINIMUM_VERSION"],
-        source_commit=output("git", "-C", REPO, "rev-parse", "HEAD"),
+        source_commit=output("git", "-c", f"safe.directory={REPO}", "-C", REPO, "rev-parse", "HEAD"),
         platform=env["CLOUDPLAY_OTA_PLATFORM"], channel="beta",
         key_epoch=int(env["CLOUDPLAY_OTA_KEY_EPOCH"]),
         workflow=env["CLOUDPLAY_OTA_WORKFLOW"], data_schema_min=1, data_schema_max=1,
@@ -119,6 +129,7 @@ def build():
         secret_key=Path(env["CLOUDPLAY_OTA_SECRET_KEY"]),
         public_key=REPO / "image-build/keys" / f'epoch-{env["CLOUDPLAY_OTA_KEY_EPOCH"]}-primary.pub',
     )
+    validate_release(root, args.version, args.source_commit)
     catalog, signed_metadata = builder.build(args)
     expected, _ = builder.inventory(boot, root)
     if expected != signed_metadata["manifest"]:
@@ -222,6 +233,7 @@ def build():
     shutil.rmtree(work)
     run("xz", "-T0", "-3", image)
     compressed = Path(str(image) + ".xz")
+    compressed.chmod(0o644)
     provenance = {
         "schema": 1, "experimental": True, "production_baseline": False,
         "version": args.version, "source_commit": args.source_commit, "workflow": args.workflow,

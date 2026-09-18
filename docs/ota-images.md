@@ -92,6 +92,43 @@ vfat kernel module. Ext4 partitions are mounted only through the verified
 new-image loop device. Assembly compares the inputs to the metadata returned
 by the signed-bundle round trip before copying either slot.
 
+## GitHub signing workflow
+
+`Build signed OTA beta` (`.github/workflows/release-ota.yml`) builds the full
+pi-gen image and signs its OTA assets on a fresh GitHub ARM64 runner. Dispatch
+it from `main` with an existing annotated `vX.Y.Z-beta.N` tag pointing at that
+exact commit, the minimum compatible OTA version, platform, and key epoch.
+An existing release for that tag is rejected rather than overwritten.
+
+Before using it, configure the `ota-release` GitHub environment with required
+reviewers and deployment restricted to `main`. Store the primary Minisign
+private-key file as the environment secret `CLOUDPLAY_OTA_SIGNING_KEY`; its
+public key must match the committed primary key for the selected epoch. Keep
+the recovery private key offline, outside GitHub. Environment protection must
+be configured in GitHub settings; declaring its name in YAML does not create
+review or branch restrictions.
+
+The unsigned pi-gen step uses `CLOUDPLAY_OTA_DEFER_SIGNING=1`, which checks all
+public build prerequisites, rejects signing credentials, and leaves the exact
+boot/root snapshot for subsequent assembly. It does not produce a signed OTA
+release. The primary secret is supplied only to the later signing step, after
+pi-gen and its chroots have exited. Both steps use the same fresh runner; this
+is not isolation against a compromised builder.
+
+The signing step materializes the primary key as an owner-only file outside
+the checkout, verifies that it matches the committed public key before the
+assembly, and removes it on success or failure. The privileged assembly
+receives a fixed environment without the raw signing secret or GitHub token.
+Only the signed release directory and separate build logs are uploaded.
+
+The workflow creates a **draft prerelease**, not an approved production
+release. Image checksums, both-slot verification, and source provenance must
+pass before attachment. Publish only after reviewing the exact CI-built
+artifacts and the remaining hardware gates. A separate final acceptance run
+must exercise real GitHub discovery/download; local transport adapters do
+not satisfy it. Factory installation gates remain disabled in this
+experimental workflow.
+
 ## Validation and release status
 
 See [artifact verification](ota-artifacts.md) and

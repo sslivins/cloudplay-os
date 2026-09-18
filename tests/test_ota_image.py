@@ -47,6 +47,21 @@ def table():
 
 
 class GeometryTests(unittest.TestCase):
+    def test_assembler_binds_payload_to_release_source_and_smoke(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            record = root / "usr/share/cloudplay/release.json"
+            record.parent.mkdir(parents=True)
+            expected = dict(version="0.1.0-beta.3", source_commit="a" * 40,
+                            launcher_smoke_passed=True)
+            record.write_text(json.dumps(expected))
+            assembler.validate_release(root, expected["version"], expected["source_commit"])
+            for change in (dict(version="0.1.0-beta.2"), dict(source_commit="b" * 40),
+                           dict(launcher_smoke_passed=False)):
+                record.write_text(json.dumps(expected | change))
+                with self.assertRaisesRegex(ValueError, "SOURCE"):
+                    assembler.validate_release(root, expected["version"], expected["source_commit"])
+
     @unittest.skipUnless(os.name == "posix" and shutil.which("mcopy") and shutil.which("mkfs.vfat"),
                          "requires native userspace FAT tools")
     def test_fat_bytes_and_long_names_survive_actual_filesystem_roundtrip(self):

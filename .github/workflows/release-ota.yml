@@ -1,0 +1,127 @@
+name: Build signed OTA beta
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated beta tag on this main commit (vX.Y.Z-beta.N)
+        required: true
+        type: string
+      minimum_version:
+        description: Oldest compatible installed OTA version (without v)
+        required: true
+        type: string
+      platform:
+        description: Hardware with committed prerequisite policy
+        required: true
+        type: choice
+        options:
+          - cm5
+      key_epoch:
+        description: Committed primary/recovery public-key epoch
+        required: true
+        default: "1"
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: cloudplay-signed-ota-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    environment: ota-release
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      CLOUDPLAY_OTA_MINIMUM_VERSION: ${{ inputs.minimum_version }}
+      CLOUDPLAY_OTA_PLATFORM: ${{ inputs.platform }}
+      CLOUDPLAY_OTA_KEY_EPOCH: ${{ inputs.key_epoch }}
+      CLOUDPLAY_OTA_EXPERIMENTAL: "1"
+      CLOUDPLAY_OTA_WORKFLOW: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable source and unused release tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+          [[ "$CLOUDPLAY_OTA_KEY_EPOCH" =~ ^[1-9][0-9]*$ ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq .object.type)" == tag ]]
+          [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" == "$GITHUB_SHA" ]]
+          gh api "repos/$GH_REPO/releases" --paginate --slurp > "$RUNNER_TEMP/cloudplay-releases.json"
+          jq -e --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)] | length == 0' \
+            "$RUNNER_TEMP/cloudplay-releases.json"
+          echo "CLOUDPLAY_OTA_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          python3 scripts/artifacts.py validate
+      - name: Install native image and verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
+            dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \
+            gpg pigz xxd arch-test bmap-tools kmod minisign zstd gdisk cloud-guest-utils mtools
+      - name: Run checks without signing credentials
+        run: python3 -m unittest discover -s tests -v
+      - name: Build unsigned payload without signing credentials
+        run: |
+          sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root \
+            CLOUDPLAY_OTA_EXPERIMENTAL=1 CLOUDPLAY_OTA_DEFER_SIGNING=1 \
+            CLOUDPLAY_OTA_VERSION="$CLOUDPLAY_OTA_VERSION" \
+            CLOUDPLAY_OTA_MINIMUM_VERSION="$CLOUDPLAY_OTA_MINIMUM_VERSION" \
+            CLOUDPLAY_OTA_PLATFORM="$CLOUDPLAY_OTA_PLATFORM" \
+            CLOUDPLAY_OTA_KEY_EPOCH="$CLOUDPLAY_OTA_KEY_EPOCH" \
+            CLOUDPLAY_OTA_WORKFLOW="$CLOUDPLAY_OTA_WORKFLOW" \
+            bash scripts/build-image.sh
+      - name: Sign and assemble the reviewed payload
+        env:
+          CLOUDPLAY_OTA_SIGNING_KEY: ${{ secrets.CLOUDPLAY_OTA_SIGNING_KEY }}
+        run: bash scripts/ci-sign-ota.sh
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          directory="$RUNNER_TEMP/cloudplay-ota-signing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          if [[ -d "$directory" ]]; then
+            rm -f -- "$directory/primary.key" "$directory/probe" "$directory/probe.minisig"
+            rmdir -- "$directory"
+          fi
+      - name: Retain image build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloudplay-ota-build-log-${{ github.run_id }}
+          path: build/pi-gen/work/*/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Retain verified signed beta assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloudplay-signed-ota-${{ inputs.tag }}
+          path: build/pi-gen/deploy/experimental-ota/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Attach signed assets to a draft beta
+        working-directory: build/pi-gen/deploy/experimental-ota
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum --check SHA256SUMS
+          jq -e --arg sha "$GITHUB_SHA" --arg version "$CLOUDPLAY_OTA_VERSION" \
+            '.source_commit == $sha and .version == $version and .geometry_verified == true
+             and .both_slot_manifests_verified == true and .production_baseline == false' provenance.json
+          [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" == "$GITHUB_SHA" ]]
+          gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease \
+            --title "Cloudplay OS $RELEASE_TAG - OTA beta" \
+            --notes "Signed experimental A/B image and OTA bundle. Hardware acceptance and publication are separate gates. Build: $CLOUDPLAY_OTA_WORKFLOW" \
+            ./*

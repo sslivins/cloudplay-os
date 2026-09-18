@@ -8,10 +8,11 @@ python3 scripts/artifacts.py validate
 status="$(git -c safe.directory="$PWD" status --porcelain)"
 [[ -z "$status" ]] || { echo "Commit reviewed source before building" >&2; exit 1; }
 [[ ! -e build/pi-gen ]] || { echo "Use a clean checkout/build directory, no resumed image builds" >&2; exit 1; }
-case "${CLOUDPLAY_OTA_EXPERIMENTAL:-0}" in
-    0) ;;
-    1) python3 image-build/preflight.py ;;
-    *) echo "CLOUDPLAY_OTA_EXPERIMENTAL must be 0 or 1" >&2; exit 1 ;;
+case "${CLOUDPLAY_OTA_EXPERIMENTAL:-0}:${CLOUDPLAY_OTA_DEFER_SIGNING:-0}" in
+    0:0) ;;
+    1:0) python3 image-build/preflight.py ;;
+    1:1) python3 image-build/preflight.py --payload-only ;;
+    *) echo "Invalid experimental/deferred-signing build mode" >&2; exit 1 ;;
 esac
 python3 scripts/artifacts.py fetch
 commit="$(python3 -c 'import json; print(json.load(open("manifest.json"))["pi_gen"]["commit"])')"
@@ -64,5 +65,11 @@ cd deploy
 sha256sum ./*.img.xz > SHA256SUMS
 if [[ "${CLOUDPLAY_OTA_EXPERIMENTAL:-0}" == 1 ]]; then
     cd ../../..
-    python3 image-build/assemble.py
+    if [[ "${CLOUDPLAY_OTA_DEFER_SIGNING:-0}" == 1 ]]; then
+        test -d build/pi-gen/deploy/ota-inputs/root
+        test -d build/pi-gen/deploy/ota-inputs/boot
+        echo "Unsigned OTA payload ready; signing and image assembly are still required."
+    else
+        python3 image-build/assemble.py
+    fi
 fi

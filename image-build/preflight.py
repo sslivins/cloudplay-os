@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Refuse experimental builds without reviewed hardware policy and real trust roots."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -34,12 +35,16 @@ def validate_approval(value):
             raise ValueError("HARDWARE_POLICY: tryboot prerequisite required")
 
 
-def main():
+def main(*, payload_only=False):
     if os.environ.get("CLOUDPLAY_OTA_EXPERIMENTAL", "0") != "1":
         raise ValueError("OPT_IN: CLOUDPLAY_OTA_EXPERIMENTAL=1 required")
     required = ("CLOUDPLAY_OTA_VERSION", "CLOUDPLAY_OTA_MINIMUM_VERSION",
                 "CLOUDPLAY_OTA_PLATFORM", "CLOUDPLAY_OTA_KEY_EPOCH",
-                "CLOUDPLAY_OTA_SECRET_KEY", "CLOUDPLAY_OTA_WORKFLOW")
+                "CLOUDPLAY_OTA_WORKFLOW")
+    if not payload_only:
+        required += ("CLOUDPLAY_OTA_SECRET_KEY",)
+    elif os.environ.get("CLOUDPLAY_OTA_SECRET_KEY") or os.environ.get("CLOUDPLAY_OTA_SIGNING_KEY"):
+        raise ValueError("KEYS: unsigned payload builds must not receive signing credentials")
     for key in required:
         if not os.environ.get(key):
             raise ValueError(f"CONFIG: missing {key}")
@@ -60,7 +65,7 @@ def main():
         if key.is_symlink() or not key.is_file() or not 20 <= key.stat().st_size <= 8192:
             raise ValueError("KEYS: real primary AND separately held recovery public keys required")
     tracked = subprocess.check_output(
-        ["git", "-C", str(REPO), "ls-files", "--", "image-build/keys/*.pub",
+        ["git", "-c", f"safe.directory={REPO}", "-C", str(REPO), "ls-files", "--", "image-build/keys/*.pub",
          "image-build/hardware-approval.json"], text=True, timeout=30).splitlines()
     for path in [approval, *keys.glob("*.pub")]:
         if path.relative_to(REPO).as_posix() not in tracked:
@@ -69,16 +74,21 @@ def main():
     recovery = (keys / f"epoch-{epoch}-recovery.pub").read_text().splitlines()[-1]
     if primary == recovery:
         raise ValueError("KEYS: primary and recovery must be independent")
-    secret = Path(os.environ["CLOUDPLAY_OTA_SECRET_KEY"])
-    if secret.is_symlink() or not secret.is_file() or secret.resolve().is_relative_to(REPO):
-        raise ValueError("KEYS: external regular private-key file required")
-    if secret.stat().st_mode & 0o077:
-        raise ValueError("KEYS: private key must be owner-only")
+    if not payload_only:
+        secret = Path(os.environ["CLOUDPLAY_OTA_SECRET_KEY"])
+        if secret.is_symlink() or not secret.is_file() or secret.resolve().is_relative_to(REPO):
+            raise ValueError("KEYS: external regular private-key file required")
+        if secret.stat().st_mode & 0o077:
+            raise ValueError("KEYS: private key must be owner-only")
     print("Experimental prerequisite configuration present; physical acceptance is NOT attested.")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--payload-only", action="store_true",
+                        help="Validate unsigned build prerequisites; reject signing credentials")
+    args = parser.parse_args()
     try:
-        main()
+        main(payload_only=args.payload_only)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         sys.exit(str(exc))
