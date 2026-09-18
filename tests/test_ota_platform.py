@@ -120,7 +120,7 @@ class PlatformTests(unittest.TestCase):
                     patch("updater.platform.sha256_file", return_value="b" * 64), \
                     patch("updater.platform.identity_files", return_value={
                         "root/etc/machine-id": (b"a" * 32 + b"\n", 0o644)}), \
-                    patch("updater.platform.os.chown", create=True), \
+                    patch("updater.platform._set_attributes") as attributes, \
                     patch("updater.platform.GENERATED_PATHS",
                           GENERATED_PATHS | {"boot/autoboot.txt"}):
                 generated = platform._generated(
@@ -133,6 +133,10 @@ class PlatformTests(unittest.TestCase):
                 self.assertTrue(ticket["approval"]["experimental_hardware_validation"])
                 self.assertEqual(ticket["previous"]["config_sha256"], "b" * 64)
                 self.assertEqual(ticket["layout"], record)
+                self.assertEqual(attributes.call_count, 2)
+                for call in attributes.call_args_list:
+                    self.assertEqual(call.args[1]["uid"], 0)
+                    self.assertEqual(call.args[1]["gid"], 0)
             self.assertIn("boot/slot-valid.json", generated)
             fstab = (root / "etc/fstab").read_text()
             self.assertIn("PARTUUID=" + layout.part(5).uuid, fstab)

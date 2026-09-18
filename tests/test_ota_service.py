@@ -79,7 +79,7 @@ class ServiceTests(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(socket, "SO_PEERCRED"), "Linux socket integration")
     def test_real_socket_fixed_request_response(self):
-        runtime = Mock(config=Config())
+        runtime = Mock(config=Config(launcher_uid=os.getuid()))
         runtime.status.return_value = {"phase": "idle", "mutation_enabled": False}
         service = Service(runtime)
         left, right = socket.socketpair(socket.AF_UNIX)
