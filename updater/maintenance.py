@@ -24,12 +24,12 @@ UNIT = "cloudplay-maintenance.service"
 LOG = logging.getLogger(__name__)
 
 
-def kill_gaming_processes(uid, text):
+def kill_session_processes(uid, text):
     if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
         fail("SESSION", "Race-safe process termination is unavailable")
     pids = text.split()
     if not pids or len(pids) > 1024 or any(not p.isdecimal() or int(p) <= 1 for p in pids):
-        fail("SESSION", "Invalid remaining gaming-process identities")
+        fail("SESSION", "Invalid remaining session-process identities")
     for value in pids:
         pid = int(value)
         try:
@@ -42,8 +42,8 @@ def kill_gaming_processes(uid, text):
                 identities = next((line.split()[1:] for line in status.splitlines()
                                    if line.startswith("Uid:")), None)
                 if identities != [str(uid)] * 4:
-                    fail("SESSION", "Gaming process identity changed during termination")
-                LOG.warning("Terminating leftover gaming process %s after session shutdown", pid)
+                    fail("SESSION", "Session process identity changed during termination")
+                LOG.warning("Terminating leftover session process %s (UID %s)", pid, uid)
                 signal.pidfd_send_signal(fd, signal.SIGKILL)
             except (FileNotFoundError, ProcessLookupError):
                 continue
@@ -86,6 +86,22 @@ class Portal:
     def active(self):
         return self.run(["systemctl", "is-active", UNIT], allowed=(0, 3)).stdout.strip() == "active"
 
+    def terminate_identity(self, uid):
+        result = self.run(["loginctl", "terminate-user", str(uid)], timeout=30, allowed=(0, 1))
+        if result.returncode:
+            LOG.warning("Session termination for UID %s reported: %s", uid, result.stderr.strip())
+        # PAM can move children out of the service cgroup into session scopes.
+        self.run(["systemctl", "--no-block", "stop", f"user-{uid}.slice"])
+        deadline = time.monotonic() + 10
+        while True:
+            remaining = self.run(["pgrep", "-u", str(uid)], allowed=(0, 1))
+            if remaining.returncode == 1:
+                return
+            if time.monotonic() >= deadline:
+                fail("SESSION", "Session processes remain; refusing to switch identities")
+            kill_session_processes(uid, remaining.stdout)
+            time.sleep(.1)
+
     def transition(self, uid, command):
         authorize(uid, command, self.config)
         if not self.lock.acquire(blocking=False):
@@ -98,33 +114,22 @@ class Portal:
                 if command == "close":
                     if not self.runtime.status().get("provider_launch_allowed"):
                         fail("BUSY", "Finish or cancel the update; a staged update must restart before gaming")
+                    switching = True
+                    self.run(["systemctl", "--no-block", "stop", UNIT])
+                    self.terminate_identity(self.config.launcher_uid)
                     self.run(["systemctl", "stop", UNIT], timeout=20)
                     self.marker.unlink(missing_ok=True)
                     self.run(["systemctl", "start", "greetd.service"], timeout=30)
+                    if self.run(["systemctl", "is-active", "greetd.service"],
+                                allowed=(0, 3)).stdout.strip() != "active":
+                        fail("SESSION", "Gaming session did not start")
                     return {"session": "gaming"}
                 # No maintenance browser runs on the trusted compositor. Terminate
                 # the old seat and user manager, not just Chromium's visible tab.
                 atomic_write(self.marker, b"trusted-update-session\n")
                 switching = True
                 self.run(["systemctl", "stop", "greetd.service"], timeout=30)
-                result = self.run(["loginctl", "terminate-user", str(self.config.browser_uid)],
-                                  timeout=30, allowed=(0, 1))
-                if result.returncode:
-                    LOG.warning("Gaming user termination reported: %s", result.stderr.strip())
-                # logind can leave closing scopes and their user manager alive.
-                # Stop their slice, then target verified remaining PIDs without
-                # risking PID-reuse signals to an unrelated identity.
-                self.run(["systemctl", "--no-block", "stop",
-                          f"user-{self.config.browser_uid}.slice"])
-                deadline = time.monotonic() + 10
-                while True:
-                    remaining = self.run(["pgrep", "-u", str(self.config.browser_uid)], allowed=(0, 1))
-                    if remaining.returncode == 1:
-                        break
-                    if time.monotonic() >= deadline:
-                        fail("SESSION", "Gaming processes remain; refusing trusted update controls")
-                    kill_gaming_processes(self.config.browser_uid, remaining.stdout)
-                    time.sleep(.1)
+                self.terminate_identity(self.config.browser_uid)
                 self.run(["systemctl", "start", UNIT], timeout=30)
                 return {"session": "updates"}
         except ERRORS:

@@ -44,6 +44,8 @@ class MaintenanceTests(unittest.TestCase):
             calls.append(args)
             if args[0] == "pgrep":
                 return SimpleNamespace(returncode=0 if remaining else 1, stdout="", stderr="")
+            if args == ["systemctl", "is-active", "greetd.service"]:
+                return SimpleNamespace(returncode=0, stdout="active", stderr="")
             return SimpleNamespace(returncode=0, stdout="inactive", stderr="")
         return m.Portal(runtime, runner=run, marker=Path(directory) / "active"), calls
 
@@ -84,7 +86,7 @@ class MaintenanceTests(unittest.TestCase):
                 patch.object(m.os, "close") as close, \
                 patch.object(m.Path, "read_text", return_value="Uid:\t0\t0\t0\t0\n"):
             with self.assertRaisesRegex(UpdateError, "identity changed"):
-                m.kill_gaming_processes(1000, "123")
+                m.kill_session_processes(1000, "123")
             send.assert_not_called()
             close.assert_called_once_with(42)
 
@@ -95,7 +97,7 @@ class MaintenanceTests(unittest.TestCase):
                 patch.object(m.os, "close") as close, \
                 patch.object(m.Path, "read_text", return_value="Uid:\t1000\t1000\t1000\t1000\n"), \
                 self.assertLogs(m.LOG, level="WARNING"):
-            m.kill_gaming_processes(1000, "123")
+            m.kill_session_processes(1000, "123")
             opened.assert_called_once_with(123)
             send.assert_called_once_with(42, m.signal.SIGKILL)
             close.assert_called_once_with(42)
@@ -106,9 +108,24 @@ class MaintenanceTests(unittest.TestCase):
             portal, calls = self.fixture(directory)
             portal.marker.write_text("active")
             portal.transition(450, "close")
-            self.assertEqual(calls, [["systemctl", "stop", m.UNIT],
-                                     ["systemctl", "start", "greetd.service"]])
+            self.assertEqual(calls, [["systemctl", "--no-block", "stop", m.UNIT],
+                                     ["loginctl", "terminate-user", "450"],
+                                     ["systemctl", "--no-block", "stop", "user-450.slice"],
+                                     ["pgrep", "-u", "450"],
+                                     ["systemctl", "stop", m.UNIT],
+                                     ["systemctl", "start", "greetd.service"],
+                                     ["systemctl", "is-active", "greetd.service"]])
             self.assertFalse(portal.marker.exists())
+
+    def test_stale_trusted_process_blocks_return_to_gaming(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(m, "provider_lease", side_effect=lambda _: nullcontext()):
+            portal, calls = self.fixture(directory, remaining=True)
+            portal.marker.write_text("active")
+            with self.assertLogs(m.LOG, level="ERROR"), self.assertRaisesRegex(UpdateError, "SESSION"):
+                portal.transition(450, "close")
+            self.assertNotIn(["systemctl", "start", "greetd.service"], calls)
+            self.assertTrue(portal.marker.exists())
 
 
 @unittest.skipUnless(os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0,
