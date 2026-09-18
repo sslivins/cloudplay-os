@@ -11,6 +11,7 @@ import socket
 import stat
 import struct
 import threading
+import time
 
 from .client import receive_line
 from .platform import run
@@ -21,6 +22,33 @@ SOCKET = Path("/run/cloudplay-maintenance/control.sock")
 ACTIVE = SOCKET.parent / "active"
 UNIT = "cloudplay-maintenance.service"
 LOG = logging.getLogger(__name__)
+
+
+def kill_gaming_processes(uid, text):
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        fail("SESSION", "Race-safe process termination is unavailable")
+    pids = text.split()
+    if not pids or len(pids) > 1024 or any(not p.isdecimal() or int(p) <= 1 for p in pids):
+        fail("SESSION", "Invalid remaining gaming-process identities")
+    for value in pids:
+        pid = int(value)
+        try:
+            fd = os.pidfd_open(pid)
+        except ProcessLookupError:
+            continue
+        try:
+            try:
+                status = Path(f"/proc/{pid}/status").read_text()
+                identities = next((line.split()[1:] for line in status.splitlines()
+                                   if line.startswith("Uid:")), None)
+                if identities != [str(uid)] * 4:
+                    fail("SESSION", "Gaming process identity changed during termination")
+                LOG.warning("Terminating leftover gaming process %s after session shutdown", pid)
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+        finally:
+            os.close(fd)
 
 
 def authorize(uid, command, config):
@@ -83,9 +111,20 @@ class Portal:
                                   timeout=30, allowed=(0, 1))
                 if result.returncode:
                     LOG.warning("Gaming user termination reported: %s", result.stderr.strip())
-                remaining = self.run(["pgrep", "-u", str(self.config.browser_uid)], allowed=(0, 1))
-                if remaining.returncode != 1:
-                    fail("SESSION", "Gaming processes remain; refusing trusted update controls")
+                # logind can leave closing scopes and their user manager alive.
+                # Stop their slice, then target verified remaining PIDs without
+                # risking PID-reuse signals to an unrelated identity.
+                self.run(["systemctl", "--no-block", "stop",
+                          f"user-{self.config.browser_uid}.slice"])
+                deadline = time.monotonic() + 10
+                while True:
+                    remaining = self.run(["pgrep", "-u", str(self.config.browser_uid)], allowed=(0, 1))
+                    if remaining.returncode == 1:
+                        break
+                    if time.monotonic() >= deadline:
+                        fail("SESSION", "Gaming processes remain; refusing trusted update controls")
+                    kill_gaming_processes(self.config.browser_uid, remaining.stdout)
+                    time.sleep(.1)
                 self.run(["systemctl", "start", UNIT], timeout=30)
                 return {"session": "updates"}
         except ERRORS:

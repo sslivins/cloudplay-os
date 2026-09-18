@@ -72,6 +72,28 @@ class MaintenanceTests(unittest.TestCase):
                 portal.transition(450, "close")
             self.assertEqual(calls, [])
 
+    def test_remaining_pid_must_still_belong_to_gaming_identity(self):
+        with patch.object(m.os, "pidfd_open", return_value=42, create=True), \
+                patch.object(m.signal, "pidfd_send_signal", create=True) as send, \
+                patch.object(m.os, "close") as close, \
+                patch.object(m.Path, "read_text", return_value="Uid:\t0\t0\t0\t0\n"):
+            with self.assertRaisesRegex(UpdateError, "identity changed"):
+                m.kill_gaming_processes(1000, "123")
+            send.assert_not_called()
+            close.assert_called_once_with(42)
+
+    def test_verified_leftover_uses_pidfd_not_reusable_pid(self):
+        with patch.object(m.os, "pidfd_open", return_value=42, create=True) as opened, \
+                patch.object(m.signal, "pidfd_send_signal", create=True) as send, \
+                patch.object(m.signal, "SIGKILL", 9, create=True), \
+                patch.object(m.os, "close") as close, \
+                patch.object(m.Path, "read_text", return_value="Uid:\t1000\t1000\t1000\t1000\n"), \
+                self.assertLogs(m.LOG, level="WARNING"):
+            m.kill_gaming_processes(1000, "123")
+            opened.assert_called_once_with(123)
+            send.assert_called_once_with(42, m.signal.SIGKILL)
+            close.assert_called_once_with(42)
+
     def test_trusted_exit_stops_private_compositor_before_restoring_gaming(self):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(m, "provider_lease", side_effect=lambda _: nullcontext()):
