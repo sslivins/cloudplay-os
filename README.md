@@ -28,8 +28,9 @@ release; 4K streaming and HDR display output are not yet validated.
 - Raspberry Pi 5, or Compute Module 5 with a suitable carrier.
 - A microSD card; 32 GB is recommended for development.
 - An HDMI display, keyboard and mouse, and suitable power and cooling.
-- Ethernet or Wi-Fi, an NVIDIA account, and access to a supported game.
-  GeForce NOW availability and features depend on your region and membership.
+- Ethernet or Wi-Fi and an account for at least one available service.
+  Game access, availability and features depend on the provider, region and
+  membership.
 
 Raspberry Pi 5 has built-in Wi-Fi. Wireless is optional on Compute Module 5;
 "Lite" refers to the absence of eMMC, not Wi-Fi.
