@@ -1,5 +1,9 @@
 # Cloudplay OS
 
+<p align="center">
+  <img src="launcher/assets/cloudplay-logo.png" alt="Cloudplay OS" width="520">
+</p>
+
 Cloudplay OS turns a Raspberry Pi into a cloud-gaming appliance, with a branded
 startup screen and Wi-Fi setup when needed. Services open in full-screen
 Chromium; there is no desktop or operating-system account wizard.
