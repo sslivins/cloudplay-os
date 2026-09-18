@@ -106,7 +106,10 @@ For logs, access controls and recovery, see [maintenance](docs/maintenance.md).
   Decoding HDR-encoded video does not establish HDR output to the display.
 - Service sign-in persists locally. Browser data is not encrypted at rest;
   protect physical access to the card.
-- There is no OTA update system. The Chromium packages are held at the pinned
+- OTA is experimental; there is no supported OTA-capable download yet.
+  [A/B development images](docs/ota-images.md) require a deliberate reflash,
+  signed trust configuration, and additional safety acceptance. The published
+  preview is updated by reflashing. Chromium packages are held at the pinned
   version, so ordinary OS package upgrades do not update the browser.
 
 ## Building

@@ -87,3 +87,9 @@ subprocess.run([
 PY
 rm -rf /opt/cloudplay-build-inputs/artifacts
 CHROOT
+if [[ -f "${inputs}/ota-config.json" ]]; then
+    on_chroot <<'CHROOT'
+set -eu
+bash /opt/cloudplay-build-inputs/install-ota.sh
+CHROOT
+fi

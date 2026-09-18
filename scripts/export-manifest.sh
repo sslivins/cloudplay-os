@@ -38,6 +38,26 @@ runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
 # labwc need not propagate its session client's failure; require explicit success.
 test -f /run/cloudplay-config-check/home-smoke.json
 install -m 644 /run/cloudplay-config-check/home-smoke.json /usr/local/share/cloudplay/home-smoke.json
+if [[ -f /etc/cloudplay/ota-enabled ]]; then
+    runuser -u cloudplay -- env XDG_RUNTIME_DIR=/run/cloudplay-config-check \
+        CLOUDPLAY_SMOKE_UPDATES=1 \
+        CLOUDPLAY_SMOKE_RESULT=/run/cloudplay-config-check/updates-smoke.json \
+        WLR_BACKENDS=headless WLR_RENDERER=pixman \
+        timeout --kill-after=5 20 dbus-run-session -- labwc -C /etc/cloudplay/labwc \
+        -S '/usr/bin/python3 /opt/cloudplay-build-inputs/check-launcher.py'
+    test -f /run/cloudplay-config-check/updates-smoke.json
+    install -m 644 /run/cloudplay-config-check/updates-smoke.json /usr/local/share/cloudplay/updates-smoke.json
+    python3 -B - <<'PY'
+import json
+from pathlib import Path
+for name in ("home-smoke.json", "updates-smoke.json"):
+    assert json.loads((Path("/usr/local/share/cloudplay") / name).read_text()) == {"passed": True}
+record = Path("/usr/share/cloudplay/release.json")
+release = json.loads(record.read_text())
+release["launcher_smoke_passed"] = True
+record.write_text(json.dumps(release, sort_keys=True) + "\n")
+PY
+fi
 rm -rf /run/cloudplay-config-check
 python3 /opt/cloudplay-build-inputs/verify-kiosk.py
 python3 /opt/cloudplay-build-inputs/package-manifest.py
@@ -46,3 +66,6 @@ mkdir -p "${DEPLOY_DIR}/provenance"
 cp "${ROOTFS_DIR}/usr/local/share/cloudplay/"{build-manifest.json,packages.tsv} "${DEPLOY_DIR}/provenance/"
 cp "${ROOTFS_DIR}/usr/local/share/cloudplay/kiosk-verification.json" "${DEPLOY_DIR}/provenance/"
 cp "${ROOTFS_DIR}/opt/cloudplay-build-inputs/"{manifest.json,cloudplay-commit.txt,cloudplay-working-tree.patch,builder-os-release,builder-packages.tsv} "${DEPLOY_DIR}/provenance/"
+if [[ "${CLOUDPLAY_OTA_EXPERIMENTAL:-0}" == 1 ]]; then
+    bash "${ROOTFS_DIR}/opt/cloudplay-build-inputs/image-build/snapshot.sh"
+fi

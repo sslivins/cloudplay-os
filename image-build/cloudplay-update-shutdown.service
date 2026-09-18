@@ -1,0 +1,15 @@
+[Unit]
+Description=Record genuine graceful Cloudplay shutdown
+Requires=cloudplay-data.service
+After=cloudplay-data.service data.mount cloudplay-update-bootstrap.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/true
+ExecStop=/usr/bin/python3 -B /usr/lib/cloudplay/image/boot-service.py shutdown
+RemainAfterExit=yes
+TimeoutStopSec=2min
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

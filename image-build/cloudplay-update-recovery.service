@@ -1,0 +1,8 @@
+[Unit]
+Description=Report Cloudplay update recovery requirement
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /usr/lib/cloudplay/image/recovery.py
+TimeoutStartSec=30s

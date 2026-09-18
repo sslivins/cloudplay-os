@@ -1,0 +1,17 @@
+[Unit]
+Description=Reconcile Cloudplay update state before the kiosk
+Requires=cloudplay-data.service
+After=cloudplay-data.service
+Before=cloudplay-updater.service greetd.service
+OnFailure=cloudplay-update-recovery.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /usr/lib/cloudplay/image/boot-service.py bootstrap
+RemainAfterExit=yes
+TimeoutStartSec=5min
+TimeoutStopSec=5min
+UMask=0077
+
+[Install]
+RequiredBy=greetd.service

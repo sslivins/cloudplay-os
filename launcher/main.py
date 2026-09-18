@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
+from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -47,10 +48,10 @@ def main():
     except BaseException:
         control.close()
         raise
-    run(browser, control, Gamepads())
+    run(browser, control, Gamepads(), Updates() if OTA_ENABLED.is_file() else None)
 
 
-def run(browser, control, pads):
+def run(browser, control, pads, updates=None):
     os.environ["GDK_BACKEND"] = "wayland"
     import gi
     gi.require_version("Gtk", "3.0")
@@ -162,6 +163,9 @@ def run(browser, control, pads):
     recovering = False
     closing = False
     next_check = 0
+    updates_screen = False
+    update_confirmation = False
+    update_notice = None
 
     def style(widget, *names):
         context = widget.get_style_context()
@@ -235,6 +239,10 @@ def run(browser, control, pads):
             box.pack_start(row, False, False, 0)
 
     def show(title, choices, note="", services=False, return_help=False):
+        nonlocal updates_screen, update_confirmation, update_notice
+        updates_screen = False
+        update_confirmation = title == "CONFIRM UPDATE"
+        update_notice = None
         for child in box.get_children():
             box.remove(child)
             child.destroy()
@@ -258,6 +266,12 @@ def run(browser, control, pads):
             buttons.append(button)
         if return_help:
             add_return_help()
+        if services and updates is not None:
+            update_notice = Gtk.Button(label=update_badge(updates.status))
+            update_notice.set_halign(Gtk.Align.END)
+            update_notice.connect("clicked", lambda _: show_updates())
+            box.pack_start(update_notice, False, False, 0)
+            buttons.append(update_notice)
         # Remapping creates a newly focused native view, even over a fullscreen
         # service/error page. Never rely on JavaScript or focus inside Chromium.
         window.hide()
@@ -265,6 +279,38 @@ def run(browser, control, pads):
         window.fullscreen()
         window.present()
         buttons[0].grab_focus()
+
+    def show_updates(note=""):
+        nonlocal updates_screen
+        if updates is None or browser.service:
+            return
+        choices = [(label, lambda command=command: update_action(command),
+                    "software-update-available-symbolic", False)
+                   for label, command in update_actions(updates.status)]
+        choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
+        message = note or updates.error or update_summary(updates.status)
+        show("SYSTEM UPDATES", choices, message)
+        updates_screen = True
+
+    def update_action(command):
+        if updates is None or browser.service:
+            return
+        if command in ("install", "restart"):
+            label = "Install Update" if command == "install" else "Restart to Update"
+            note = ("The inactive system slot will be replaced. Keep the power connected."
+                    if command == "install" else
+                    "Cloudplay OS will restart now and check the updated system.")
+            show("CONFIRM UPDATE",
+                 [("Not Now", show_updates, "go-previous-symbolic", False),
+                  (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
+        else:
+            submit_update(command)
+
+    def submit_update(command):
+        if updates.submit(command):
+            show_updates("Sending update request...")
+        else:
+            show_updates("An update request is already in progress.")
 
     def home(note=""):
         nonlocal confirming, recovering
@@ -285,6 +331,10 @@ def run(browser, control, pads):
 
     def launch(service):
         nonlocal confirming
+        if updates is not None and (
+                updates.error or updates.status.get("provider_launch_allowed") is not True):
+            home("The update service has not cleared this session to launch. Check System Updates.")
+            return
         try:
             browser.start(service)
         except (OSError, RuntimeError, subprocess.SubprocessError):
@@ -308,7 +358,7 @@ def run(browser, control, pads):
     def ask_home():
         nonlocal confirming
         if not browser.service:
-            if not window.get_visible():
+            if not window.get_visible() or updates_screen or update_confirmation:
                 home()
             return
         if confirming:
@@ -328,6 +378,10 @@ def run(browser, control, pads):
             return
         if action == "back" and confirming and not recovering:
             stay()
+        elif action == "back" and update_confirmation:
+            show_updates()
+        elif action == "back" and updates_screen:
+            home()
         elif action == "accept":
             focus = window.get_focus()
             if focus in buttons:
@@ -358,6 +412,13 @@ def run(browser, control, pads):
                 home("The streaming session ended unexpectedly. Choose where to play.")
         if control.poll():
             ask_home()
+        if updates is not None and updates.poll():
+            if updates_screen and not browser.service:
+                old_index = buttons.index(window.get_focus()) if window.get_focus() in buttons else 0
+                show_updates()
+                buttons[min(old_index, len(buttons) - 1)].grab_focus()
+            elif update_notice is not None:
+                update_notice.set_label(update_badge(updates.status))
         for action in pads.poll(window.get_visible()):
             navigate(action)
         return True
@@ -380,6 +441,8 @@ def run(browser, control, pads):
         finally:
             pads.close()
             control.close()
+            if updates is not None:
+                updates.close()
 
 
 if __name__ == "__main__":
