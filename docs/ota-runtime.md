@@ -87,11 +87,16 @@ the separate maintenance broker; this is not an install authorization.
 The broker holds the provider interlock, stops greetd, terminates the gaming
 user's sessions/user manager, and refuses to start maintenance if any process
 with that UID remains.
+PAM session scopes are drained separately from the service cgroup. Remaining
+processes are checked against the departing UID and signalled through pidfds;
+the same barrier applies to UID 450 before gaming resumes.
 
 `cloudplay-maintenance.service` starts labwc and the native update UI as
 `cloudplay-update` (UID/GID 450) on VT8 with a private 0700 runtime. No browser
 is launched there. The old gaming UID cannot connect to its Wayland socket,
 inject compositor input, write its heartbeats, or authenticate to updater IPC.
+The compositor command pins its runtime directory after PAM environment setup,
+so the UI and health monitor use the same private namespace.
 Only root and UID 450 may request `close`; close is refused while the updater
 holds an operation or a staged/candidate update prevents gaming.
 
