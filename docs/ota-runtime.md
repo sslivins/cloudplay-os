@@ -102,8 +102,9 @@ holds an operation or a staged/candidate update prevents gaming.
 Candidate boots start this session automatically. GTK publishes its event-loop
 heartbeat; a separate bounded subprocess completes a real Wayland round trip
 before publishing the compositor heartbeat. Health verifies owner 450 and
-private modes, not just timestamps. Successful confirmation enables Return to
-Main Menu; returning stops the private compositor before restoring greetd.
+private modes, not just timestamps. Successful confirmation allows the UI to
+return to the Main Menu automatically; returning stops the private compositor
+before restoring greetd.
 Arrow keys select actions; Enter, keypad Enter, or Space activates the focused
 action. The install confirmation initially selects **Not Now** and explains that
 Cloudplay will restart automatically. There is no second restart confirmation.
@@ -111,6 +112,20 @@ Status refreshes automatically; there is no manual Refresh button. **Cancel Upda
 is available during download and verification only while the daemon permits it.
 Once slot writes begin, the screen shows progress without a cancel button.
 Keyboard and controller navigation safely ignore actions on button-free progress screens.
+Confirming installation immediately shows "Starting your update..." without
+install or navigation actions, including while the command waits behind a status
+poll. The daemon also reports `starting` while its accepted install worker is
+still running prechecks. Request failures restore the available actions and show
+the error rather than leaving an optimistic progress screen stuck.
+
+After the update reboot, the native UI shows "Finishing your update..." without
+the installation timeline or version heading. The existing health checks,
+stabilization window, deadline, and rollback rules are unchanged. Only after
+`promoted` and explicit `provider_launch_allowed` does a UI that observed the
+post-boot checks request the broker to return to the Main Menu automatically.
+That transition is attempted once; a failure remains visible with manual
+navigation available. Merely revisiting a previously completed update does not
+automatically leave System Updates.
 
 The maintenance broker has only `open`/`open-beta`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks

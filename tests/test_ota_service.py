@@ -12,6 +12,22 @@ from updater.state import Config, UpdateError
 
 
 class ServiceTests(unittest.TestCase):
+    def test_accepted_install_is_starting_before_runtime_changes_phase(self):
+        runtime = Mock(config=Config())
+        runtime.status.side_effect = lambda: dict(
+            phase="available", install_enabled=True, provider_launch_allowed=True)
+        service = Service(runtime)
+        service._command = "install"
+        service._worker_lock.acquire()
+        try:
+            status = service.status()
+            self.assertEqual(status["phase"], "starting")
+            self.assertFalse(status["install_enabled"])
+            self.assertFalse(status["provider_launch_allowed"])
+        finally:
+            service._worker_lock.release()
+        self.assertEqual(service.status()["phase"], "available")
+
     def test_worker_persists_command_for_expected_and_unexpected_errors(self):
         for error in (UpdateError("NETWORK", "Offline"), RuntimeError("Unexpected")):
             with self.subTest(error=error):

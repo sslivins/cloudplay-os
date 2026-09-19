@@ -64,6 +64,8 @@ class Service:
         status = self.runtime.status()
         if self._worker_lock.locked():
             status.update(can_restart=False, install_enabled=False, channel_change_enabled=False)
+            if status["phase"] == "available" and self._command == "install":
+                status.update(phase="starting", provider_launch_allowed=False)
             if status["phase"] == "ready_to_restart" and self._command == "install":
                 status.update(phase="finishing", progress=None,
                               operation=dict(name="cleanup"))

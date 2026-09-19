@@ -14,7 +14,7 @@ import time
 ENABLED = Path("/etc/cloudplay/ota-enabled")
 COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "dismiss",
                       "open", "open-beta", "close", "enable_beta", "disable_beta"})
-BUSY = frozenset({"checking", "downloading", "verifying", "staging", "installing",
+BUSY = frozenset({"starting", "returning", "checking", "downloading", "verifying", "staging", "installing",
                   "invalidating", "formatting", "copying", "publishing",
                   "staging_boot", "staging_root", "verifying_slot", "promoting",
                   "activating", "tryboot_running", "restarting", "finishing"})
@@ -254,8 +254,10 @@ def progress_detail(status):
         "publishing": "Saving and checking the installation",
         "finishing": "Finishing up before restart",
         "restarting": "Checking files and saving settings before restart",
-        "tryboot_running": "Making sure Cloudplay is ready to use",
-        "promoting": "Finishing your update",
+        "starting": "Starting your update...",
+        "returning": "Returning to the Main Menu...",
+        "tryboot_running": "Finishing your update...",
+        "promoting": "Finishing your update...",
     }.get(status.get("phase"), "Waiting for progress...")
 
 
@@ -373,6 +375,16 @@ class Updates:
                 print("Cloudplay update client: " + str(exc)[:400], file=sys.stderr)
                 result = (None, request_error(command, {"code": getattr(exc, "code", None)}))
             self.results.put(result)
+
+    @property
+    def display_status(self):
+        command = self.queued_action or self.active_command
+        if command in ("install", "close"):
+            return dict(self.status, phase="starting" if command == "install" else "returning",
+                        install_enabled=False,
+                        provider_launch_allowed=False, can_cancel=False, can_restart=False,
+                        progress=None, operation=None, error=None)
+        return self.status
 
     def submit(self, command):
         if command not in COMMANDS:
