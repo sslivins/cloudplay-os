@@ -241,6 +241,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     update_journey = None
     update_version = None
     update_activity_text = None
+    post_update_seen = False
+    auto_return_attempted = False
     home_focus = 0
 
     def style(widget, *names):
@@ -553,7 +555,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             show_updates()
 
     def show_updates(note=""):
-        nonlocal updates_screen, update_choices
+        nonlocal updates_screen, update_choices, post_update_seen, auto_return_attempted
         if browser.service:
             return
         if updates is None:
@@ -562,21 +564,31 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                  "Updates aren't available on this installation.")
             updates_screen = True
             return
+        status = updates.display_status
+        post_update = trusted_updates and status.get("phase") in ("tryboot_running", "promoting", "returning")
+        if trusted_updates and status.get("phase") in ("tryboot_running", "promoting"):
+            post_update_seen = True
+        if (trusted_updates and post_update_seen and not auto_return_attempted
+                and status.get("phase") == "promoted"
+                and status.get("provider_launch_allowed") is True and not updates.error):
+            auto_return_attempted = True
+            submit_update("close")
+            return
         choices = [(label, lambda command=command: update_action(command),
                     "software-update-available-symbolic", False)
-                   for label, command in update_actions(updates.status)]
+                   for label, command in update_actions(status)]
         if not trusted_updates:
             choices = ([("Try Again", open_updates, "view-refresh-symbolic", False)]
                        if updates.error else [])
         if trusted_updates:
-            if updates.status.get("provider_launch_allowed") is True:
+            if status.get("provider_launch_allowed") is True:
                 choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         else:
             choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
-        message = note or updates.error or update_summary(updates.status, include_progress=False)
-        activity = updates.status.get("phase") in UPDATE_BUSY and not updates.error
-        stages = journey(updates.status)
-        choice_key = (tuple(choice[0] for choice in choices), activity, bool(stages))
+        message = note or updates.error or update_summary(status, include_progress=False)
+        activity = status.get("phase") in UPDATE_BUSY and not updates.error
+        stages = () if post_update else journey(status)
+        choice_key = (tuple(choice[0] for choice in choices), activity, bool(stages), post_update)
         if not updates_screen or choice_key != update_choices:
             focus = window.get_focus()
             old_action = (update_choices[0][buttons.index(focus)]
@@ -588,16 +600,17 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                 buttons[choice_key[0].index(old_action)].grab_focus()
         else:
             update_message.set_text(message)
-        update_version.set_text(version_text(updates.status))
+        update_version.set_text(version_text(status))
+        update_version.set_visible(not post_update)
         if update_journey is not None:
-            refresh_timeline(stages, activity and not updates.status.get("error"))
+            refresh_timeline(stages, activity and not status.get("error"))
         if update_progress is not None:
-            fraction = progress_fraction(updates.status)
+            fraction = progress_fraction(status)
             update_progress.set_visible(fraction is not None)
             if fraction is not None:
                 update_progress.set_fraction(fraction)
-            update_progress.set_text(progress_text(updates.status))
-            update_activity_text.set_text("" if fraction is not None else progress_text(updates.status))
+            update_progress.set_text(progress_text(status))
+            update_activity_text.set_text("" if fraction is not None else progress_text(status))
 
     def update_action(command):
         if updates is None or browser.service:
@@ -692,7 +705,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             show_updates()
         elif action == "back" and updates_screen:
             if trusted_updates:
-                if updates.status.get("provider_launch_allowed") is True:
+                if updates.display_status.get("provider_launch_allowed") is True:
                     show_settings()
             else:
                 show_settings()

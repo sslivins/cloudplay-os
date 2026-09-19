@@ -7,6 +7,7 @@ from pathlib import Path
 source = Path(__file__).resolve().parents[1] / "launcher"
 sys.path.insert(0, str(source if source.is_dir() else Path("/usr/local/lib/cloudplay/launcher")))
 import main
+from updates import Updates as UpdateClient
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -70,6 +71,8 @@ progress_unmaps = []
 
 
 class Updates:
+    display_status = UpdateClient.display_status
+
     def __init__(self):
         self.status = {"phase": "available", "install_enabled": True,
                        "provider_launch_allowed": True,
@@ -79,9 +82,20 @@ class Updates:
         self.error = ""
         self.changed = False
         self.commands = []
+        self.active_command = None
+        self.queued_action = None
+        self.fail_close = False
 
     def submit(self, command):
         self.commands.append(command)
+        if command == "install":
+            self.active_command = command
+            self.changed = True
+            return True
+        if command == "close" and self.fail_close:
+            self.error = "Unable to return to the Main Menu."
+            self.changed = True
+            return True
         if command in ("enable_beta", "disable_beta"):
             self.status["channel"] = "beta" if command == "enable_beta" else "stable"
         self.status["phase"] = {"install": "restarting", "restart": "restarting",
@@ -179,14 +193,17 @@ def drive_trusted(window, buttons, titles):
     elif step == 3:
         assert updates.commands == ["install"] and not buttons
         assert "SYSTEM UPDATES" in titles and "CONFIRM UPDATE" not in titles
-        assert updates.status["phase"] == "restarting"
+        assert updates.status["phase"] == "available"
+        assert "Starting your update..." in titles
+        assert not any("is available" in text for text in titles)
         assert "Do not disconnect from power." in titles
         for key in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right,
                     Gdk.KEY_Return, Gdk.KEY_space, Gdk.KEY_Escape):
             press(window, key)
         pads.actions = ["up", "down", "left", "right", "accept", "back"]
     elif step == 4:
-        updates.status.update(phase="tryboot_running", can_restart=False)
+        updates.active_command = None
+        updates.status.update(phase="restarting", can_restart=False, provider_launch_allowed=False)
         updates.changed = True
     elif step == 5:
         assert "SYSTEM UPDATES" in titles and not buttons
@@ -318,8 +335,40 @@ def drive_trusted(window, buttons, titles):
         buttons[-1].clicked()
     elif step == 24:
         assert "SETTINGS" in titles
-        buttons[-1].clicked()
+        updates.status.update(phase="tryboot_running", provider_launch_allowed=False)
+        buttons[0].clicked()
+    elif step == 25:
+        assert not buttons
+        assert "Finishing your update..." in titles
+        assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
+        header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
+        assert not header.get_visible()
+        assert "close" not in updates.commands
+        snapshot(window, "update-postboot-finishing")
+        updates.status.update(phase="promoting")
+        updates.changed = True
+    elif step == 26:
+        assert "Finishing your update..." in titles and not buttons
+        assert "close" not in updates.commands
+        updates.status.update(phase="promoted", provider_launch_allowed=False)
+        updates.changed = True
+    elif step == 27:
+        assert "close" not in updates.commands
+        updates.fail_close = True
+        updates.status.update(provider_launch_allowed=True)
+        updates.changed = True
+    elif step == 28:
+        assert updates.error in titles
+        assert updates.commands.count("close") == 1
+        updates.changed = True
+    elif step == 29:
         assert updates.commands == ["install", "cancel", "restart", "disable_beta", "enable_beta", "close"]
+        buttons[-1].clicked()
+    elif step == 30:
+        assert "SETTINGS" in titles
+        updates.fail_close = False
+        buttons[-1].clicked()
+        assert updates.commands.count("close") == 2
         done = True
         Gtk.main_quit()
         return False

@@ -12,6 +12,54 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_install_hides_offer_until_acknowledged_including_queued_poll(self):
+        for queued in (False, True):
+            with self.subTest(queued=queued):
+                release = threading.Event()
+                def send(command):
+                    if not release.wait(3):
+                        raise TimeoutError("test request was not released")
+                    return dict(phase="starting")
+                client = ui.Updates(send)
+                self.addCleanup(client.close)
+                client.status = dict(phase="available", install_enabled=True,
+                                     provider_launch_allowed=True)
+                if queued:
+                    client.submit("status")
+                try:
+                    self.assertTrue(client.submit("install"))
+                    self.assertEqual(client.display_status["phase"], "starting")
+                    self.assertEqual(ui.actions(client.display_status), [])
+                    self.assertFalse(client.display_status["provider_launch_allowed"])
+                    self.assertFalse(client.submit("install"))
+                    self.assertEqual(client.status["phase"], "available")
+                finally:
+                    release.set()
+
+    def test_install_failure_restores_offer_and_surfaces_error(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.status = dict(phase="available", install_enabled=True)
+        client.pending, client.active_command = True, "install"
+        client.results.put((None, "Unable to start your update."))
+        self.assertTrue(client.poll())
+        self.assertEqual(client.display_status["phase"], "available")
+        self.assertEqual(client.error, "Unable to start your update.")
+        self.assertIn(("Install Update", "install"), ui.actions(client.display_status))
+
+    def test_postboot_uses_finishing_copy_not_a_verification_task(self):
+        for phase in ("tryboot_running", "promoting"):
+            self.assertEqual(ui.summary(dict(phase=phase)), "Finishing your update...")
+
+    def test_menu_transition_does_not_flash_completed_update_actions(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.status = dict(phase="promoted", provider_launch_allowed=True)
+        client.pending, client.active_command = True, "close"
+        self.assertEqual(client.display_status["phase"], "returning")
+        self.assertEqual(ui.actions(client.display_status), [])
+        self.assertFalse(client.display_status["provider_launch_allowed"])
+
     def test_errors_explain_next_steps_without_dumping_internal_details(self):
         for code, expected in (("NETWORK", "internet connection"),
                                ("SPACE", "free space"), ("SIGNATURE", "won't be installed"),
