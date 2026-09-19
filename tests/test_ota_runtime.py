@@ -104,6 +104,33 @@ class FakePlatform:
         return self.inspect()
 
 
+class HealthTimingConfigTests(unittest.TestCase):
+    def test_default_and_bounds_preserve_recovery_deadline(self):
+        self.assertEqual(Config().stabilization_seconds, 10)
+        self.assertEqual(Config().deadline_seconds, 600)
+        Config().validate()
+        for seconds in (0, 9, 600):
+            with self.subTest(seconds=seconds), self.assertRaises(UpdateError):
+                replace(Config(), stabilization_seconds=seconds).validate()
+
+    def test_legacy_default_is_adapted_without_rewriting_shared_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            policy = dict(stabilization_seconds=120, deadline_seconds=600)
+            path.write_text(json.dumps(policy))
+            before = path.read_bytes()
+            with patch("updater.state.trusted_path"), \
+                    self.assertLogs("cloudplay.updater", level="INFO"):
+                loaded = Config.load(path)
+            self.assertEqual(loaded.stabilization_seconds, 10)
+            self.assertEqual(loaded.deadline_seconds, 600)
+            self.assertEqual(path.read_bytes(), before)
+            for seconds in (10, 30, 60, 180):
+                path.write_text(json.dumps(dict(policy, stabilization_seconds=seconds)))
+                with patch("updater.state.trusted_path"):
+                    self.assertEqual(Config.load(path).stabilization_seconds, seconds)
+
+
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -416,11 +443,11 @@ class RuntimeTests(unittest.TestCase):
     def test_health_requires_continuous_stabilization_then_promotes(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        for self.time in (130, 160, 190):
+        for self.time in (102, 104, 106):
             self.runtime.health()
-        self.time = 219
+        self.time = 109.9
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.time = 220
+        self.time = 110
         self.assertEqual(self.runtime.health()["phase"], "promoted")
         state = self.runtime.journal.load()
         self.assertEqual(state["last_good"], "B")
@@ -431,13 +458,17 @@ class RuntimeTests(unittest.TestCase):
     def test_health_failure_resets_stabilization(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        self.time = 219
+        self.time = 109
         self.platform.fail_health = True
         self.runtime.health()
         self.assertIsNone(self.runtime.journal.load()["pending"]["healthy_since"])
         self.platform.fail_health = False
-        self.time = 220
+        self.time = 110
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
+        self.time = 119.9
+        self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
+        self.time = 120
+        self.assertEqual(self.runtime.health()["phase"], "promoted")
 
     def test_health_waits_for_deadline_probe_lock(self):
         self.test_candidate_recognized_without_dt_tryboot()
@@ -473,9 +504,9 @@ class RuntimeTests(unittest.TestCase):
     def test_confirmed_boot_marker_recovers_interrupted_promotion_commit(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        for self.time in (130, 160, 190):
+        for self.time in (102, 104, 106):
             self.runtime.health()
-        self.time = 220
+        self.time = 110
         original = self.runtime.journal.update
         def interrupted(**changes):
             if changes.get("phase") == "promoted":
@@ -492,9 +523,9 @@ class RuntimeTests(unittest.TestCase):
     def test_missed_health_samples_restart_stabilization(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        self.time = 220
+        self.time = 111
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 220)
+        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 111)
 
     def test_early_rollback_attempt_prevents_second_data_driven_reboot(self):
         self.test_candidate_recognized_without_dt_tryboot()

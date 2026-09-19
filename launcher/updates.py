@@ -218,6 +218,8 @@ def progress_fraction(status):
 
 
 def progress_text(status):
+    if status.get("phase") in ("starting", "returning", "tryboot_running", "promoting"):
+        return ""
     counts = progress_counts(status)
     if counts is None:
         sample = operation(status)

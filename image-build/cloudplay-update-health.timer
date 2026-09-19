@@ -2,8 +2,8 @@
 Description=Check Cloudplay tentative update health periodically
 
 [Timer]
-OnBootSec=15s
-OnUnitInactiveSec=10s
+OnBootSec=5s
+OnUnitInactiveSec=2s
 AccuracySec=1s
 
 [Install]

@@ -483,7 +483,7 @@ class Runtime:
             last_check = pending.get("last_health_check")
             pending["last_health_check"] = now
             if (pending.get("healthy_since") is None or last_check is None
-                    or now - last_check > 30):
+                    or now - last_check > min(30, self.config.stabilization_seconds)):
                 pending["healthy_since"] = now
                 self.journal.update(pending=pending, error=None)
             elif now - pending["healthy_since"] >= self.config.stabilization_seconds:

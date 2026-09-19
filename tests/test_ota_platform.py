@@ -2,6 +2,7 @@ import copy
 from contextlib import contextmanager
 from dataclasses import replace
 import os
+import stat
 from pathlib import Path
 import tempfile
 import subprocess
@@ -27,6 +28,42 @@ def table(disk="/dev/mmcblk0"):
 
 
 class PlatformTests(unittest.TestCase):
+    def test_short_window_requires_fresh_launcher_and_compositor_heartbeats(self):
+        config = Config()
+        platform = LinuxPlatform(config, runner=Mock(return_value=SimpleNamespace(stdout="active")))
+        platform.inspect = Mock(return_value=SimpleNamespace(active="B"))
+        platform.mount_info = Mock(return_value={"maj:min": "179:6"})
+        platform.boot_id = Mock(return_value="boot1")
+        metadata = dict(version="1.1.0", source_commit="commit", manifest_sha256="digest",
+                        manifest={"root/usr/share/cloudplay/release.json": {"type": "file", "sha256": "hash"},
+                                  "boot/config.txt": {"sha256": "hash"}})
+        pending = dict(slot="B", metadata=metadata, boot_id="boot1")
+        ages = {"launcher": 2, "compositor": 2}
+
+        def read(path, *args):
+            if path.name == "release.json":
+                return dict(version="1.1.0", source_commit="commit", launcher_smoke_passed=True)
+            if path.name == "slot-valid.json":
+                return dict(slot="B", version="1.1.0", manifest_sha256="digest")
+            return dict(boot_id="boot1", monotonic=100 - ages[path.name.split("-")[0]])
+
+        def info(path):
+            mode = stat.S_IFDIR | 0o700 if path.name == "cloudplay-update-ui" else stat.S_IFREG | 0o600
+            return SimpleNamespace(st_uid=450, st_mode=mode)
+
+        with patch("updater.platform.read_json", side_effect=read), \
+                patch("updater.platform.sha256_file", return_value="hash"), \
+                patch("updater.platform.os.stat", return_value=SimpleNamespace(st_ino=42, st_uid=1000)), \
+                patch.object(Path, "lstat", info), \
+                patch("updater.platform.atomic_write"), patch.object(Path, "unlink"):
+            self.assertEqual(platform.health(pending, now=100).active, "B")
+            for name in ages:
+                with self.subTest(name=name):
+                    ages[name] = 5.1
+                    with self.assertRaisesRegex(UpdateError, "stale"):
+                        platform.health(pending, now=100)
+                    ages[name] = 2
+
     def _identity_fixture(self):
         if os.name == "posix" and os.getuid() != 0:
             self.skipTest("persistent identity ownership fixture requires Linux root")

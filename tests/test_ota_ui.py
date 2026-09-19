@@ -50,6 +50,7 @@ class UpdatePresentationTests(unittest.TestCase):
     def test_postboot_uses_finishing_copy_not_a_verification_task(self):
         for phase in ("tryboot_running", "promoting"):
             self.assertEqual(ui.summary(dict(phase=phase)), "Finishing your update...")
+            self.assertEqual(ui.progress_text(dict(phase=phase)), "")
 
     def test_menu_transition_does_not_flash_completed_update_actions(self):
         client = ui.Updates(lambda command: {})

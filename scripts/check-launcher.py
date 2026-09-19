@@ -340,6 +340,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 25:
         assert not buttons
         assert "Finishing your update..." in titles
+        assert "Waiting for progress..." not in titles
         assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
         header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
         assert not header.get_visible()
