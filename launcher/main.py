@@ -461,7 +461,10 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         window.show_all()
         window.fullscreen()
         window.present()
-        buttons[home_focus if services else 0].grab_focus()
+        if buttons:
+            buttons[home_focus if services else 0].grab_focus()
+        else:
+            window.set_focus(None)
 
     def refresh_update_notice():
         label = update_badge(updates.status)
@@ -568,9 +571,6 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if trusted_updates:
             if updates.status.get("provider_launch_allowed") is True:
                 choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
-            if not choices:
-                choices.append(("Refresh", lambda: submit_update("status"),
-                                "view-refresh-symbolic", False))
         else:
             choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         message = note or updates.error or update_summary(updates.status, include_progress=False)
@@ -707,7 +707,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             focus = window.get_focus()
             if focus in buttons:
                 focus.clicked()
-        elif action in ("up", "left", "down", "right"):
+        elif action in ("up", "left", "down", "right") and buttons:
             focus = window.get_focus()
             index = buttons.index(focus) if focus in buttons else 0
             if settings_shortcut is not None:

@@ -329,8 +329,6 @@ def actions(status):
         return [("Try Again", "open")]
     if phase not in BUSY and phase != "ready_to_restart":
         result.append(("Check for Updates", "check"))
-    if phase == "ready_to_restart":
-        result.append(("Refresh", "status"))
     if phase == "available" and status.get("install_enabled") is True:
         result.append(("Install Update", "install"))
     if phase == "ready_to_restart" and status.get("can_restart") is True:

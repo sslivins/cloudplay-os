@@ -177,15 +177,20 @@ def drive_trusted(window, buttons, titles):
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_space)
     elif step == 3:
-        assert updates.commands == ["install"] and len(buttons) == 1
+        assert updates.commands == ["install"] and not buttons
         assert "SYSTEM UPDATES" in titles and "CONFIRM UPDATE" not in titles
         assert updates.status["phase"] == "restarting"
         assert "Do not disconnect from power." in titles
+        for key in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right,
+                    Gdk.KEY_Return, Gdk.KEY_space, Gdk.KEY_Escape):
+            press(window, key)
+        pads.actions = ["up", "down", "left", "right", "accept", "back"]
     elif step == 4:
         updates.status.update(phase="tryboot_running", can_restart=False)
         updates.changed = True
     elif step == 5:
-        assert "SYSTEM UPDATES" in titles and len(buttons) == 1
+        assert "SYSTEM UPDATES" in titles and not buttons
+        assert updates.commands == ["install"]
         updates.status.update(phase="promoted", provider_launch_allowed=True)
         updates.changed = True
     elif step == 6:
@@ -195,10 +200,10 @@ def drive_trusted(window, buttons, titles):
     elif step == 7:
         bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar.get_fraction() == 0.25 and bar.get_text() == "25%"
-        assert len(buttons) == 1 and window.get_focus() == buttons[0]
+        assert not buttons and window.get_focus() is None
         snapshot(window, "update-copy-progress")
         grid, header = check_timeline(window, 2)
-        progress_widgets.update(bar=bar, button=buttons[0], grid=grid, header=header,
+        progress_widgets.update(bar=bar, grid=grid, header=header,
                                 header_y=header.get_allocation().y)
         window.connect("unmap", lambda *_: progress_unmaps.append(True))
         updates.status["progress"]["received"] = 10 * 1024**2
@@ -206,7 +211,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 8:
         bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar is progress_widgets["bar"] and bar.get_fraction() == 0.5
-        assert buttons[0] is progress_widgets["button"] and window.get_focus() == buttons[0]
+        assert not buttons and window.get_focus() is None
         assert not progress_unmaps, "A progress refresh remapped the window"
         grid, header = check_timeline(window, 2)
         assert grid is progress_widgets["grid"] and header is progress_widgets["header"]
@@ -232,7 +237,7 @@ def drive_trusted(window, buttons, titles):
         bar = progress_widgets["bar"]
         assert bar.get_visible() and bar.get_fraction() == 0.3
         assert bar.get_text() == "30%"
-        assert window.get_focus() == progress_widgets["button"]
+        assert not buttons and window.get_focus() is None
         snapshot(window, "update-file-check")
         updates.status["operation"] = dict(name="save_system", elapsed=65)
         updates.changed = True
@@ -256,7 +261,7 @@ def drive_trusted(window, buttons, titles):
         assert len(buttons) == 2
         check_timeline(window, 5, moving=False)
         snapshot(window, "update-complete")
-        updates.status.update(phase="verifying", provider_launch_allowed=False,
+        updates.status.update(phase="verifying", provider_launch_allowed=False, can_cancel=True,
                               operation=dict(name="unpack", received=45, total=100))
         updates.changed = True
     elif step == 15:
@@ -265,13 +270,19 @@ def drive_trusted(window, buttons, titles):
         bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar.get_text() == "45%"
         snapshot(window, "update-unpacking")
-        updates.status.update(phase="ready_to_restart", can_restart=True, operation=None)
+        assert len(buttons) == 1
+        assert any(isinstance(w, Gtk.Label) and w.get_text() == "Cancel Update"
+                   for w in buttons[0].get_child().get_children())
+        press(window, Gdk.KEY_Return)
+        assert updates.commands == ["install", "cancel"]
+        updates.status.update(phase="ready_to_restart", can_restart=True, can_cancel=False,
+                              provider_launch_allowed=False, operation=None)
         updates.changed = True
     elif step == 16:
         check_timeline(window, 4, moving=False)
         snapshot(window, "update-ready")
         buttons[-1].clicked()
-        assert updates.commands == ["install", "restart"]
+        assert updates.commands == ["install", "cancel", "restart"]
         assert not any(isinstance(w, Gtk.Label) and w.get_text() == "CONFIRM UPDATE"
                        for w in children_of(window)), "Recovery restart must not ask for confirmation twice"
         updates.status.update(phase="promoted", can_restart=False, provider_launch_allowed=True)
@@ -291,7 +302,7 @@ def drive_trusted(window, buttons, titles):
         buttons[0].clicked()
     elif step == 20:
         assert any("Beta releases: Off" in text for text in titles)
-        assert updates.commands == ["install", "restart", "disable_beta"]
+        assert updates.commands == ["install", "cancel", "restart", "disable_beta"]
         snapshot(window, "beta-releases-off")
         buttons[0].clicked()
     elif step == 21:
@@ -308,7 +319,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 24:
         assert "SETTINGS" in titles
         buttons[-1].clicked()
-        assert updates.commands == ["install", "restart", "disable_beta", "enable_beta", "close"]
+        assert updates.commands == ["install", "cancel", "restart", "disable_beta", "enable_beta", "close"]
         done = True
         Gtk.main_quit()
         return False

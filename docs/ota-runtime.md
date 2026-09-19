@@ -107,6 +107,10 @@ Main Menu; returning stops the private compositor before restoring greetd.
 Arrow keys select actions; Enter, keypad Enter, or Space activates the focused
 action. The install confirmation initially selects **Not Now** and explains that
 Cloudplay will restart automatically. There is no second restart confirmation.
+Status refreshes automatically; there is no manual Refresh button. **Cancel Update**
+is available during download and verification only while the daemon permits it.
+Once slot writes begin, the screen shows progress without a cancel button.
+Keyboard and controller navigation safely ignore actions on button-free progress screens.
 
 The maintenance broker has only `open`/`open-beta`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks
