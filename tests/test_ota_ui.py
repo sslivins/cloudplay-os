@@ -3,6 +3,7 @@ from pathlib import Path
 import threading
 import time
 import unittest
+from unittest.mock import Mock
 
 spec = importlib.util.spec_from_file_location(
     "ota_ui", Path(__file__).resolve().parents[1] / "launcher/updates.py")
@@ -11,6 +12,20 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_beta_navigation_requires_root_owned_fixed_page(self):
+        path = Mock()
+        path.lstat.return_value = Mock(st_mode=ui.stat.S_IFREG | 0o644, st_uid=0, st_size=4)
+        path.read_text.return_value = "beta"
+        self.assertEqual(ui.initial_page(path), "beta")
+        path.read_text.return_value = "enable_beta"
+        with self.assertRaisesRegex(ValueError, "Invalid"):
+            ui.initial_page(path)
+        path.lstat.return_value.st_uid = 1000
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            ui.initial_page(path)
+        path.lstat.side_effect = FileNotFoundError
+        self.assertEqual(ui.initial_page(path), "updates")
+
     def test_action_feedback_describes_the_action(self):
         self.assertEqual(ui.request_text("check"), "Checking for updates...")
         self.assertEqual(ui.request_text("install"), "Starting your update...")
@@ -84,6 +99,13 @@ class UpdatePresentationTests(unittest.TestCase):
                     {"phase": phase, flag: permission})).values())
             self.assertIn(command, dict(ui.actions(
                 {"phase": phase, flag: True})).values())
+
+    def test_public_session_only_offers_transition_retry_not_privileged_actions(self):
+        status = dict(phase="available", requires_trusted_session=True, install_enabled=True)
+        self.assertEqual(ui.actions(status), [("Try Again", "open")])
+        self.assertEqual(ui.request_text("open"), "Opening System Updates...")
+        self.assertNotIn("browser", ui.summary(status))
+        self.assertNotIn("controls", ui.summary(status).lower())
 
     def test_no_cancel_after_partition_writes_begin(self):
         self.assertIn("cancel", dict(ui.actions({"phase": "downloading", "can_cancel": True})).values())

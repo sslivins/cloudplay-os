@@ -9,7 +9,7 @@ from gamepad import Gamepads
 from heartbeat import Heartbeats
 from host import Control
 from main import run
-from updates import Updates
+from updates import Updates, initial_page
 
 
 class NoBrowser:
@@ -36,7 +36,7 @@ def main():
         raise SystemExit("Private trusted compositor runtime required")
     os.umask(0o077)
     run(NoBrowser(), Control(runtime), Gamepads(), Updates(), trusted_updates=True,
-        heartbeats=Heartbeats(runtime))
+        heartbeats=Heartbeats(runtime), start_page=initial_page())
 
 
 if __name__ == "__main__":

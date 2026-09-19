@@ -11,7 +11,8 @@ import threading
 import time
 
 ENABLED = Path("/etc/cloudplay/ota-enabled")
-COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "dismiss", "open", "close"})
+COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "dismiss",
+                      "open", "open-beta", "close", "enable_beta", "disable_beta"})
 BUSY = frozenset({"checking", "downloading", "verifying", "staging", "installing",
                   "invalidating", "formatting", "copying", "publishing",
                   "staging_boot", "staging_root", "verifying_slot", "promoting",
@@ -54,8 +55,11 @@ def request_text(command):
         "cancel": "Cancelling your update...",
         "restart": "Preparing to restart...",
         "status": "Refreshing update status...",
-        "open": "Opening update controls...",
+        "open": "Opening System Updates...",
+        "open-beta": "Opening Beta Releases...",
         "close": "Returning to the Main Menu...",
+        "enable_beta": "Turning on beta releases...",
+        "disable_beta": "Turning off beta releases...",
         "dismiss": "",
     }[command]
 
@@ -106,7 +110,7 @@ def request(command):
     parent = str(Path(__file__).resolve().parents[1])
     if parent not in sys.path:
         sys.path.insert(0, parent)
-    if command in ("open", "close"):
+    if command in ("open", "open-beta", "close"):
         from updater.maintenance import request as transition
         transition(command)
         return {"phase": "unknown"}
@@ -116,6 +120,20 @@ def request(command):
         return public_status()
     from updater.client import request as send
     return send(command)
+
+
+def initial_page(path=Path("/run/cloudplay-maintenance/landing-page")):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return "updates"
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+            or info.st_mode & 0o022 or info.st_size > 16):
+        raise ValueError("Unsafe settings navigation state")
+    page = path.read_text()
+    if page not in ("updates", "beta"):
+        raise ValueError("Invalid settings navigation state")
+    return page
 
 
 def public_status(path=Path("/run/cloudplay-updater/status.json")):
@@ -131,7 +149,8 @@ def public_status(path=Path("/run/cloudplay-updater/status.json")):
     if not isinstance(value, dict):
         raise ValueError("Invalid public update status")
     return dict(value, requires_trusted_session=True,
-                install_enabled=False, can_cancel=False, can_restart=False)
+                install_enabled=False, can_cancel=False, can_restart=False,
+                channel_change_enabled=False)
 
 
 def progress_counts(status):
@@ -239,8 +258,6 @@ def summary(status, *, include_progress=True):
         lines.append(" ".join(notes.split())[:400])
     if status.get("gate") or status.get("mutation_enabled") is False:
         lines.append("Experimental preview: installation is locked until the safety gates pass.")
-    if status.get("requires_trusted_session"):
-        lines.append("Open Update Controls to enter a separate, browser-free system session.")
     return "\n".join(lines)
 
 
@@ -262,7 +279,7 @@ def actions(status):
     phase = status.get("phase", "unknown")
     result = []
     if status.get("requires_trusted_session"):
-        return [("Open Update Controls", "open")]
+        return [("Try Again", "open")]
     if phase not in BUSY and phase != "ready_to_restart":
         result.append(("Check for Updates", "check"))
     if phase == "ready_to_restart":

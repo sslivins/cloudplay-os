@@ -29,9 +29,11 @@ class MaintenanceTests(unittest.TestCase):
 
     def test_browser_can_only_request_trusted_screen_not_actions_or_exit(self):
         m.authorize(1000, "open", CONFIG)
+        m.authorize(1000, "open-beta", CONFIG)
         m.authorize(450, "open", CONFIG)
         m.authorize(450, "close", CONFIG)
         for uid, command in ((1000, "close"), (1000, "install"), (450, "install"),
+                             (1000, "enable_beta"), (1000, "disable_beta"),
                              (0, "shell"), (999, "open"), (0, "restart")):
             with self.subTest(uid=uid, command=command), self.assertRaises(UpdateError):
                 m.authorize(uid, command, CONFIG)
@@ -61,6 +63,17 @@ class MaintenanceTests(unittest.TestCase):
                             calls.index(["systemctl", "start", m.UNIT]))
             self.assertTrue(portal.marker.exists())
             portal.runtime.status.assert_not_called()
+
+    def test_beta_panel_entry_only_selects_page_after_browser_shutdown(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(m, "provider_lease", side_effect=lambda _: nullcontext()):
+            portal, calls = self.fixture(directory)
+            self.assertEqual(portal.transition(1000, "open-beta"), {"session": "updates"})
+            self.assertEqual(portal.marker.with_name("landing-page").read_text(), "beta")
+            portal.runtime.enable_beta.assert_not_called()
+            portal.runtime.disable_beta.assert_not_called()
+            self.assertLess(calls.index(["pgrep", "-u", "1000"]),
+                            calls.index(["systemctl", "start", m.UNIT]))
 
     def test_remaining_browser_processes_block_trusted_ui(self):
         with tempfile.TemporaryDirectory() as directory, \

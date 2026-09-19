@@ -148,6 +148,43 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNone(status["error"])
         self.assertEqual(status["last_successful_check"], 10)
 
+    def test_beta_preference_persists_and_clears_previous_channel_offer(self):
+        before = self.runtime.journal.load()
+        status = self.runtime.disable_beta()
+        self.assertEqual(status["channel"], "stable")
+        self.assertIsNone(status["available_version"])
+        self.assertEqual(self.runtime.discovery.channel, "stable")
+        state = self.runtime.journal.load()
+        for field in ("current_version", "highest_version", "minimum_key_epoch", "last_good"):
+            self.assertEqual(state[field], before[field])
+        restored = Runtime(self.config, platform=self.platform)
+        self.assertEqual(restored.status()["channel"], "stable")
+        self.assertEqual(restored.discovery.channel, "stable")
+        self.assertEqual(restored.enable_beta()["channel"], "beta")
+        self.assertEqual(restored.discovery.channel, "beta")
+
+    def test_channel_change_blocked_during_update_and_recovery(self):
+        for phase in ("checking", "downloading", "verifying", "ready_to_restart",
+                      "tryboot_running", "promoting", "recovery_required"):
+            with self.subTest(phase=phase):
+                self.runtime.journal.update(phase=phase)
+                with self.assertRaisesRegex(UpdateError, "BUSY"):
+                    self.runtime.disable_beta()
+                self.assertEqual(self.runtime.status()["channel"], "beta")
+
+    def test_invalid_persisted_channel_is_rejected(self):
+        self.runtime.journal.update(channel="nightly")
+        with self.assertRaisesRegex(UpdateError, "invalid update channel"):
+            self.runtime.status()
+
+    def test_verifier_uses_selected_channel(self):
+        self.runtime.disable_beta()
+        self.runtime.discovery.check = Mock(return_value=dict(version="1.1.0+release", size=42))
+        self.runtime.discovery.download = FakeDiscovery().download
+        self.runtime.check()
+        self.runtime.install()
+        self.assertEqual(self.verifier.call_args.kwargs["channel"], "stable")
+
     def test_install_ready_preserves_full_metadata_and_floors(self):
         result = self.runtime.install()
         self.assertEqual(result["phase"], "ready_to_restart")

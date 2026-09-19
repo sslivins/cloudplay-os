@@ -37,13 +37,14 @@ class ServiceTests(unittest.TestCase):
             status = service.dispatch("status", 450)
             self.assertEqual(status["phase"], "finishing")
             self.assertFalse(status["can_restart"])
+            self.assertFalse(status["channel_change_enabled"])
             self.assertEqual(status["operation"]["name"], "cleanup")
         finally:
             service._worker_lock.release()
         self.assertTrue(service.dispatch("status", 450)["can_restart"])
 
     def test_only_exact_fixed_commands(self):
-        for command in ("status", "check", "install", "cancel", "restart"):
+        for command in ("status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"):
             self.assertEqual(parse_request(json.dumps({"command": command})), command)
         for raw in ('{"command":"shell"}', '{"command":"install","url":"https://evil"}',
                     '{"command":"status","command":"install"}', '["status"]',
@@ -76,6 +77,13 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(UpdateError, "IPC_AUTH"):
             service.dispatch("status", 1000)
         runtime.status.assert_not_called()
+
+    def test_beta_preference_requires_trusted_identity(self):
+        service = Service(Mock(config=Config()))
+        for command in ("enable_beta", "disable_beta"):
+            with self.assertRaisesRegex(UpdateError, "IPC_AUTH"):
+                service.dispatch(command, 1000)
+        self.assertIsNone(service._worker)
 
     def test_status_works_while_hardware_gate_disabled(self):
         runtime = Mock(config=Config())
