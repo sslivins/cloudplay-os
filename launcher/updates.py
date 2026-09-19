@@ -279,7 +279,7 @@ def summary(status, *, include_progress=True):
         "publishing": "Finishing installation. Do not remove power.",
         "promoting": "Confirming the updated system...",
         "finishing": "Finishing installation. Keep power connected.",
-        "ready_to_restart": "Your update is ready. Restart to finish installing it.",
+        "ready_to_restart": "Select Finish Update to complete the update. Cloudplay will check the files and restart.",
         "restarting": "Rechecking the installed files before restart. Keep the power connected.",
         "tryboot_running": "Checking the updated system...",
         "promoted": "Update complete. Cloudplay is ready to play.",
@@ -313,7 +313,7 @@ def badge(status):
     if phase == "available":
         return "Updates - new version available"
     if phase == "ready_to_restart":
-        return "Updates - ready to restart"
+        return "Updates - finish update"
     if phase in ("failed", "rolled_back", "recovery_required") and not status.get("notice_dismissed"):
         return "Updates - attention needed"
     if phase in BUSY:
@@ -334,7 +334,7 @@ def actions(status):
     if phase == "available" and status.get("install_enabled") is True:
         result.append(("Install Update", "install"))
     if phase == "ready_to_restart" and status.get("can_restart") is True:
-        result.append(("Restart to Update", "restart"))
+        result.append(("Finish Update", "restart"))
     if status.get("can_cancel") is True:
         result.append(("Cancel Update", "cancel"))
     if phase in ("failed", "rolled_back") and not status.get("notice_dismissed"):

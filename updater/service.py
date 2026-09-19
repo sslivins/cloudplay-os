@@ -67,12 +67,19 @@ class Service:
             if status["phase"] == "ready_to_restart" and self._command == "install":
                 status.update(phase="finishing", progress=None,
                               operation=dict(name="cleanup"))
+            elif status["phase"] == "ready_to_restart" and self._command == "restart":
+                status.update(phase="restarting", progress=None, operation=None)
         return status
 
     def _work(self, command, *, automatic=False):
         try:
             if command == "check":
                 self.runtime.check(force=not automatic)
+            elif command == "install":
+                self.runtime.install()
+                # install() returns only after cleanup and releasing its runtime locks.
+                command = self._command = "restart"
+                self.runtime.restart()
             else:
                 getattr(self.runtime, command)()
         except ERRORS as exc:

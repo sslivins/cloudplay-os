@@ -161,7 +161,7 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertIn("back on your previous version", ui.summary({"phase": "rolled_back"}))
         self.assertIn("17%", ui.summary({"phase": "downloading", "progress": {"received": 17, "total": 100}}))
         self.assertLess(len(ui.summary({"phase": "failed", "error": "x" * 10000})), 500)
-        self.assertIn("ready to restart", ui.badge({"phase": "ready_to_restart"}))
+        self.assertIn("finish update", ui.badge({"phase": "ready_to_restart"}))
         self.assertNotIn("locked", ui.summary({"phase": "idle", "install_enabled": False,
                                               "mutation_enabled": True}))
 

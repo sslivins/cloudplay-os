@@ -84,7 +84,8 @@ class Updates:
         self.commands.append(command)
         if command in ("enable_beta", "disable_beta"):
             self.status["channel"] = "beta" if command == "enable_beta" else "stable"
-        self.status["phase"] = {"install": "ready_to_restart", "dismiss": "idle"}.get(command, "available")
+        self.status["phase"] = {"install": "restarting", "restart": "restarting",
+                                "dismiss": "idle"}.get(command, "available")
         self.status["can_restart"] = self.status["phase"] == "ready_to_restart"
         self.status["provider_launch_allowed"] = self.status["phase"] in ("idle", "available")
         self.changed = True
@@ -160,6 +161,8 @@ def drive_trusted(window, buttons, titles):
         press(window, Gdk.KEY_Return)
     elif step == 1:
         assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
+        assert any("restart automatically" in text for text in titles)
+        assert not any("ask you to restart" in text for text in titles)
         snapshot(window, "update-confirmation")
         assert updates.commands == []
         press(window, Gdk.KEY_space)
@@ -173,12 +176,9 @@ def drive_trusted(window, buttons, titles):
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_space)
     elif step == 3:
-        assert updates.commands == ["install"] and len(buttons) == 2
-        buttons[1].grab_focus()
-        press(window, Gdk.KEY_Return)
-        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
-        assert window.get_focus() == confirmation[0]
-        press(window, Gdk.KEY_KP_Enter)
+        assert updates.commands == ["install"] and len(buttons) == 1
+        assert "SYSTEM UPDATES" in titles and "CONFIRM UPDATE" not in titles
+        assert updates.status["phase"] == "restarting"
     elif step == 4:
         updates.status.update(phase="tryboot_running", can_restart=False)
         updates.changed = True
@@ -268,6 +268,10 @@ def drive_trusted(window, buttons, titles):
     elif step == 16:
         check_timeline(window, 4, moving=False)
         snapshot(window, "update-ready")
+        buttons[-1].clicked()
+        assert updates.commands == ["install", "restart"]
+        assert not any(isinstance(w, Gtk.Label) and w.get_text() == "CONFIRM UPDATE"
+                       for w in children_of(window)), "Recovery restart must not ask for confirmation twice"
         updates.status.update(phase="promoted", can_restart=False, provider_launch_allowed=True)
         updates.changed = True
     elif step == 17:
@@ -285,7 +289,7 @@ def drive_trusted(window, buttons, titles):
         buttons[0].clicked()
     elif step == 20:
         assert any("Beta releases: Off" in text for text in titles)
-        assert updates.commands == ["install", "disable_beta"]
+        assert updates.commands == ["install", "restart", "disable_beta"]
         snapshot(window, "beta-releases-off")
         buttons[0].clicked()
     elif step == 21:
@@ -302,7 +306,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 24:
         assert "SETTINGS" in titles
         buttons[-1].clicked()
-        assert updates.commands == ["install", "disable_beta", "enable_beta", "close"]
+        assert updates.commands == ["install", "restart", "disable_beta", "enable_beta", "close"]
         done = True
         Gtk.main_quit()
         return False

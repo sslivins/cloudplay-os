@@ -43,6 +43,56 @@ class ServiceTests(unittest.TestCase):
             service._worker_lock.release()
         self.assertTrue(service.dispatch("status", 450)["can_restart"])
 
+    def test_install_worker_keeps_lock_through_automatic_restart(self):
+        runtime = Mock(config=Config())
+        service = Service(runtime)
+        calls = []
+        runtime.status.side_effect = lambda: dict(phase="ready_to_restart", can_restart=True)
+        def install():
+            calls.append("install")
+            self.assertTrue(service._worker_lock.locked())
+            self.assertEqual(service.status()["phase"], "finishing")
+        def restart():
+            calls.append("restart")
+            self.assertTrue(service._worker_lock.locked())
+            self.assertEqual(service.status()["phase"], "restarting")
+            self.assertFalse(service.status()["can_restart"])
+            with self.assertRaisesRegex(UpdateError, "BUSY"):
+                service.start("restart")
+        runtime.install.side_effect = install
+        runtime.restart.side_effect = restart
+        service._command = "install"
+        service._worker_lock.acquire()
+        service._work("install")
+        self.assertEqual(calls, ["install", "restart"])
+        self.assertFalse(service._worker_lock.locked())
+
+    def test_failed_or_cancelled_install_never_restarts(self):
+        for error in (UpdateError("CANCELLED", "cancelled"), OSError("cleanup failed"),
+                      UpdateError("SIGNATURE", "untrusted update")):
+            with self.subTest(error=error):
+                runtime = MagicMock(config=Config())
+                runtime.install.side_effect = error
+                service = Service(runtime)
+                service._worker_lock.acquire()
+                with self.assertLogs("cloudplay.updater", level="ERROR"):
+                    service._work("install")
+                runtime.restart.assert_not_called()
+                self.assertEqual(runtime.journal.update.call_args.kwargs["error"]["command"], "install")
+                self.assertFalse(service._worker_lock.locked())
+
+    def test_automatic_restart_failure_is_reported_without_retry_loop(self):
+        runtime = MagicMock(config=Config())
+        runtime.restart.side_effect = UpdateError("SLOT_VERIFY", "readback failed")
+        service = Service(runtime)
+        service._worker_lock.acquire()
+        with self.assertLogs("cloudplay.updater", level="ERROR"):
+            service._work("install")
+        runtime.install.assert_called_once()
+        runtime.restart.assert_called_once()
+        self.assertEqual(runtime.journal.update.call_args.kwargs["error"]["command"], "restart")
+        self.assertFalse(service._worker_lock.locked())
+
     def test_only_exact_fixed_commands(self):
         for command in ("status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"):
             self.assertEqual(parse_request(json.dumps({"command": command})), command)
@@ -133,6 +183,37 @@ class ServiceTests(unittest.TestCase):
             right.close()
             thread.join(5)
         self.assertFalse(thread.is_alive())
+
+    @unittest.skipUnless(hasattr(socket, "SO_PEERCRED"), "Linux socket integration")
+    def test_install_restarts_after_request_connection_closes(self):
+        runtime = MagicMock(config=Config(launcher_uid=os.getuid()))
+        runtime.status.side_effect = lambda: dict(phase="staging")
+        finish_install = threading.Event()
+        runtime.install.side_effect = lambda: finish_install.wait(5)
+        service = Service(runtime)
+        left, right = socket.socketpair(socket.AF_UNIX)
+        service._clients.acquire()
+        connection_thread = threading.Thread(target=service._connection, args=(left,))
+        with patch.object(Config, "mutation_gate"):
+            connection_thread.start()
+            try:
+                right.sendall(b'{"command":"install"}\n')
+                response = json.loads(receive_line(right, 65536))
+                self.assertTrue(response["ok"])
+                right.close()
+                connection_thread.join(5)
+                self.assertFalse(connection_thread.is_alive())
+                self.assertTrue(service._worker.is_alive())
+                runtime.restart.assert_not_called()
+            finally:
+                right.close()
+                finish_install.set()
+                connection_thread.join(5)
+                if service._worker is not None:
+                    service._worker.join(5)
+        runtime.install.assert_called_once()
+        runtime.restart.assert_called_once()
+        self.assertFalse(service._worker.is_alive())
 
     def test_client_does_not_accept_arbitrary_command(self):
         with self.assertRaisesRegex(UpdateError, "COMMAND"):

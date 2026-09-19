@@ -105,7 +105,8 @@ before publishing the compositor heartbeat. Health verifies owner 450 and
 private modes, not just timestamps. Successful confirmation enables Return to
 Main Menu; returning stops the private compositor before restoring greetd.
 Arrow keys select actions; Enter, keypad Enter, or Space activates the focused
-action. Install and restart confirmations initially select **Not Now**.
+action. The install confirmation initially selects **Not Now** and explains that
+Cloudplay will restart automatically. There is no second restart confirmation.
 
 The maintenance broker has only `open`/`open-beta`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks
@@ -157,6 +158,9 @@ status dictionary, for the parent's native launcher adapter.
 `{"ok":true,"status":{...}}` or
 `{"ok":false,"error":{"code":"...","message":"..."}}`.
 Check/install/restart acknowledge **accepted asynchronous work**, not completion.
+An accepted `install` carries through cleanup, final restart readback, and reboot
+in the same service worker, without another UI command. `Runtime.install()` remains
+the staging primitive; the daemon composes it with the existing guarded `restart()`.
 Poll status; only `promoted` means success. No custom URLs, release versions,
 paths, flags or shell arguments cross IPC. An accepted request can still fail
 prechecks; its typed failure is persisted and logged.
@@ -212,7 +216,7 @@ Opaque operations (signature tool, formatting, profile preservation, flushing,
 configuration, unmount and cleanup) have explicit labels and elapsed task time,
 with **no bouncing progress bar or fabricated percentage/ETA**. The active
 milestone animates during measurable and opaque work, but not while waiting for
-restart confirmation, after completion, or when the status connection fails.
+an explicit recovery action, after completion, or when the status connection fails.
 Byte counters can
 pause while per-file synchronization or metadata checks finish; after 15 seconds
 without a new measurement the UI explicitly says it is waiting for the next result.
@@ -230,11 +234,17 @@ callbacks check cancellation between chunks/operations.
 
 `finishing` is a transient presentation phase while a completed installation is
 still cleaning up. The durable phase remains `ready_to_restart`, but `can_restart`
-stays false until the install worker releases its lock. A confirmed restart shows
+stays false throughout cleanup and the automatic handoff to restart. The service
+keeps its worker lock across both operations; no second install/restart can slip
+between them. Restart shows
 `restarting` with measured candidate readback, then a named wait while saving boot
 settings. The durable state stays `ready_to_restart` until the attempt is recorded,
-preserving power-loss recovery. A failed restart restores the action and reports
-its error. An unavailable status connection hides progress rather than animating
+preserving power-loss recovery. A failed restart restores a **Finish Update**
+action and reports its error; it does not retry or reboot in a loop. This action
+also handles an already-staged update recovered after a service/power interruption
+or staged by an older release. It reuses all normal checks without a second
+confirmation. A failed/cancelled install or failed cleanup never proceeds to
+automatic restart. An unavailable status connection hides progress rather than animating
 stale work. None of these UI states changes promotion or rollback deadlines.
 
 The Main Menu always has a Settings shortcut in the upper-left TV-safe margin.
@@ -253,7 +263,7 @@ A labelled bell in the upper-right is visible only for an available update,
 update activity, restart readiness, or an undismissed failure/recovery notice.
 Both Settings -> System Updates and the bell enter the same isolated updater
 automatically, without an "Open Update Controls" step or session-switch warning.
-Installation and restart still require their existing confirmations; a failed
+Installation requires one confirmation covering the automatic restart; a failed
 session transition shows its error and a retry action, never privileged controls
 in the gaming session.
 
@@ -404,7 +414,8 @@ throttling status before download/staging.
    both filesystems. Durably record `publishing` with full candidate identity.
 6. Publish target `config.txt` **last**, flush, verify again, unmount, then
    durably record `ready_to_restart`. No pointer changes occur during staging.
-7. Restart re-verifies the inactive slot and last-good identity, writes both
+7. After successful cleanup, the service automatically restarts the update.
+   Restart re-verifies the inactive slot and last-good identity, writes both
    mirrors then control with flush/readback, records a tryboot attempt and
    requests `reboot "0 tryboot"`.
 

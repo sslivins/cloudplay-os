@@ -602,17 +602,13 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     def update_action(command):
         if updates is None or browser.service:
             return
-        if command in ("install", "restart"):
-            label = "Install Update" if command == "install" else "Restart to Update"
+        if command == "install":
             note = ("You won't be able to play while the update installs.\n"
                     "This may take several minutes. Keep power connected.\n"
-                    "We'll ask you to restart when it's ready."
-                    if command == "install" else
-                    "Cloudplay will check your update, then restart to finish installing it.\n"
-                    "Keep power connected until the update is complete.")
+                    "Cloudplay will restart automatically to finish the update.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
-                  (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
+                  ("Install Update", lambda: submit_update(command), "system-reboot-symbolic", False)], note)
         else:
             submit_update(command)
 
