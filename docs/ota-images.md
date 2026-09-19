@@ -97,7 +97,12 @@ by the signed-bundle round trip before copying either slot.
 `Build signed OTA beta` (`.github/workflows/release-ota.yml`) builds the full
 pi-gen image and signs its OTA assets on a fresh GitHub ARM64 runner. Dispatch
 it from `main` with an existing annotated `vX.Y.Z-beta.N` tag pointing at that
-exact commit, the minimum compatible OTA version, platform, and key epoch.
+exact commit, the minimum compatible OTA version, platform, key epoch, and
+`release_notes`: a plain-language description of what changed (1-320 characters).
+These notes appear on the device's System Updates page, so describe user-visible
+improvements rather than signing, partition layouts, or build gates. The workflow
+adds "Beta release for testing." automatically. Technical build identity and
+verification details remain in the attached provenance, not the user-facing notes.
 An existing release for that tag is rejected rather than overwritten.
 
 Before using it, configure the `ota-release` GitHub environment with required

@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import os
 import queue
+import re
 import stat
 import sys
 import threading
@@ -21,29 +22,29 @@ BUSY = frozenset({"checking", "downloading", "verifying", "staging", "installing
 # Closed vocabulary: daemon text and internal operation names never become UI copy.
 OPERATIONS = {
     "download": (("downloading",), "Downloading your update", "downloaded"),
-    "save_download": (("downloading",), "Saving the download to storage", None),
-    "authenticate": (("verifying",), "Checking update authenticity", None),
-    "check_package": (("verifying",), "Checking the downloaded package", "checked"),
+    "save_download": (("downloading",), "Saving your download", None),
+    "authenticate": (("verifying",), "Checking that this update is safe to install", None),
+    "check_package": (("verifying",), "Checking your download", "checked"),
     "unpack": (("verifying",), "Unpacking update files", "unpacked"),
-    "save_archive": (("verifying",), "Saving unpacked files to storage", None),
-    "archive_layout": (("verifying",), "Checking package structure", "of package structure checked"),
+    "save_archive": (("verifying",), "Saving update files", None),
+    "archive_layout": (("verifying",), "Checking update contents", "checked"),
     "extract": (("verifying",), "Preparing update files", "prepared"),
-    "file_attributes": (("verifying",), "Applying file permissions", None),
+    "file_attributes": (("verifying",), "Setting up update files", None),
     "check_prepared": (("verifying",), "Checking prepared files", "checked"),
     "check_source": (("invalidating",), "Rechecking prepared files before installation", "checked"),
-    "prepare_storage": (("invalidating", "staging_boot", "staging_root"), "Preparing storage", None),
-    "preserve_profiles": (("invalidating",), "Preserving your saved sign-ins", None),
+    "prepare_storage": (("invalidating", "staging_boot", "staging_root"), "Getting your device ready", None),
+    "preserve_profiles": (("invalidating",), "Keeping your saved sign-ins", None),
     "copy_boot": (("staging_boot",), "Installing startup files", "copied"),
-    "save_boot": (("staging_boot", "publishing"), "Saving startup files to storage", None),
+    "save_boot": (("staging_boot", "publishing"), "Saving startup files", None),
     "copy_system": (("staging_root",), "Installing system files", "copied"),
     "configure_system": (("staging_root",), "Applying your device settings", None),
     "check_installed": (("verifying_slot",), "Checking installed files", "checked"),
-    "save_system": (("verifying_slot",), "Saving system files to storage", None),
+    "save_system": (("verifying_slot",), "Saving system files", None),
     "check_final": (("publishing",), "Performing the final installation check", "checked"),
-    "release_storage": (("publishing",), "Finishing storage operations", None),
+    "release_storage": (("publishing",), "Finishing up", None),
     "cleanup": (("finishing",), "Removing temporary update files", None),
     "check_restart": (("restarting",), "Checking files before restart", "checked"),
-    "save_restart": (("restarting",), "Saving restart settings", None),
+    "save_restart": (("restarting",), "Getting ready to restart", None),
 }
 STEPS = ("Download", "Prepare", "Install", "Check", "Restart")
 
@@ -62,6 +63,44 @@ def request_text(command):
         "disable_beta": "Turning off beta releases...",
         "dismiss": "",
     }[command]
+
+
+def error_detail(error):
+    code = error.get("code") if isinstance(error, dict) else None
+    if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code):
+        code = "UPDATE_ERROR"
+    guidance = {
+        "NETWORK": "Check your internet connection and try again.",
+        "HTTP": "The update server is unavailable. Please try again later.",
+        "BACKOFF": "Please wait a little before checking again.",
+        "RATE_LIMIT": "Please wait a moment and try again.",
+        "SPACE": "There isn't enough free space for this update.",
+        "SIGNATURE": "This update could not be verified, so it won't be installed.",
+        "RELEASE_CHANGED": "This update has changed. Check for updates again.",
+        "BUSY": "Finish the current update before trying again.",
+        "CANCEL_TOO_LATE": "Installation has started and can no longer be cancelled. Keep power connected.",
+        "CANCELLED": "You can try the update again later.",
+        "STRIKE_LIMIT": "Updates are paused after repeated failures. Get help before trying again.",
+        "HARDWARE_GATE": "Updates aren't enabled on this device.",
+        "ISOLATION_GATE": "This device isn't ready to install updates.",
+        "UNINITIALIZED": "Update setup needs to be completed on this device.",
+    }.get(code, "If this problem continues, use the reference below when asking for help.")
+    return f"{guidance}\nReference: {code}"
+
+
+def request_error(command, error):
+    heading = {
+        "check": "Unable to check for updates.",
+        "install": "Unable to start the update.",
+        "cancel": "Unable to cancel the update.",
+        "restart": "Unable to restart to finish the update.",
+        "open": "Unable to open System Updates.",
+        "open-beta": "Unable to open Beta Releases.",
+        "close": "Unable to return to the Main Menu.",
+        "enable_beta": "Unable to change your beta preference.",
+        "disable_beta": "Unable to change your beta preference.",
+    }.get(command, "Update status is unavailable. Please try again.")
+    return heading + "\n" + error_detail(error)
 
 
 def operation(status):
@@ -102,6 +141,8 @@ def version_text(status):
     current = str(status.get("current_version") or "")[:128]
     target = str(status.get("candidate_version") or status.get("available_version") or "")[:128]
     if target and current != target:
+        if status.get("phase") == "available":
+            return f"Cloudplay OS {target} is available"
         return f"Updating Cloudplay OS to {target}"
     return "Cloudplay OS"
 
@@ -182,34 +223,40 @@ def progress_text(status):
         sample = operation(status)
         elapsed = sample.get("elapsed") if sample else None
         if type(elapsed) is int and 0 <= elapsed <= 31 * 86400:
-            return f"Current task: {elapsed // 60}:{elapsed % 60:02d} elapsed"
-        return "Waiting for an update from the system"
+            return f"Elapsed: {elapsed // 60}:{elapsed % 60:02d}"
+        return "Waiting for progress..."
     received, total = counts
     return f"{100 * received // total}%"
 
 
 def progress_detail(status):
     if status.get("cancellation_requested"):
-        return "Cancellation requested. Waiting for the current check to stop safely."
+        return "Cancelling your update. Waiting for the current task to stop safely."
     sample = operation(status)
     if sample:
         text = OPERATIONS[sample["name"]][1]
         if (progress_counts(status) is not None
                 and type(sample.get("quiet_seconds")) is int and sample["quiet_seconds"] >= 15):
-            text += ". Waiting for the next measured result."
+            text += ". No new progress reported yet."
         return text
     return {
         "downloading": "Connecting to the update service",
         "verifying": "Checking and preparing the downloaded files",
+        "invalidating": "Getting your device ready",
+        "formatting": "Getting your device ready",
+        "staging": "Installing your update",
+        "installing": "Installing your update",
+        "copying": "Installing your update",
+        "activating": "Preparing to restart",
         "staging_boot": "Preparing to install startup files",
         "staging_root": "Preparing to install system files",
         "verifying_slot": "Checking installed files",
         "publishing": "Saving and checking the installation",
-        "finishing": "Finishing cleanup before restart is available",
+        "finishing": "Finishing up before restart",
         "restarting": "Checking files and saving settings before restart",
-        "tryboot_running": "Checking that Cloudplay starts and stays healthy",
-        "promoting": "Saving the successful system checks",
-    }.get(status.get("phase"), "Waiting for the system")
+        "tryboot_running": "Making sure Cloudplay is ready to use",
+        "promoting": "Finishing your update",
+    }.get(status.get("phase"), "Waiting for progress...")
 
 
 def summary(status, *, include_progress=True):
@@ -222,42 +269,42 @@ def summary(status, *, include_progress=True):
         "available": "An update is available.",
         "checking": "Checking for updates...",
         "downloading": "Downloading the update...",
-        "verifying": "Verifying the signed update...",
+        "verifying": "Checking your update...",
         "staging": "Installing your update. Keep power connected.",
         "installing": "Installing your update. Keep power connected.",
         "invalidating": "Preparing your device for installation. Keep power connected.",
-        "staging_boot": "Installing boot files. Do not remove power.",
+        "staging_boot": "Installing startup files. Keep power connected.",
         "staging_root": "Installing the updated system. Do not remove power.",
         "verifying_slot": "Checking the installed files...",
         "publishing": "Finishing installation. Do not remove power.",
         "promoting": "Confirming the updated system...",
         "finishing": "Finishing installation. Keep power connected.",
-        "ready_to_restart": "Ready to restart. Cloudplay will check the files again, then restart to finish the update.",
+        "ready_to_restart": "Your update is ready. Restart to finish installing it.",
         "restarting": "Rechecking the installed files before restart. Keep the power connected.",
         "tryboot_running": "Checking the updated system...",
         "promoted": "Update complete. Cloudplay is ready to play.",
-        "rolled_back": "The update did not start correctly. Your previous system was restored.",
+        "rolled_back": "The update couldn't start. You're back on your previous version.",
         "failed": "The update could not be completed.",
-        "disabled": "OTA installation is not enabled on this image.",
-        "uninitialized": "This installation needs update setup before it can receive updates.",
-        "recovery_required": "The update needs local recovery. Automatic restart is stopped.",
-        "unknown": "Waiting for the update service...",
-    }.get(phase, "Update status: " + str(phase))
+        "disabled": "Updates aren't available on this installation.",
+        "uninitialized": "This device needs update setup. Get help to complete it.",
+        "recovery_required": "This device needs help to finish the update. It won't restart automatically.",
+        "unknown": "Loading update status...",
+    }.get(phase, "Update status is unavailable. Please try again.")
     if (phase in ("idle", "checking", "failed") and isinstance(error, dict)
             and error.get("command") == "check"):
         text = "Unable to check for updates."
+    elif phase == "failed" and isinstance(error, dict) and error.get("code") == "CANCELLED":
+        text = "Update cancelled."
     lines = [progress_detail(status) if phase in BUSY and phase != "checking" else text]
     if include_progress and progress_counts(status) is not None:
         lines.append(progress_text(status))
     if error:
-        if isinstance(error, dict):
-            error = str(error.get("code", "ERROR")) + ": " + str(error.get("message", ""))
-        lines.append(str(error)[:400])
+        lines.append(error_detail(error))
     notes = status.get("notes")
     if isinstance(notes, str) and notes.strip() and phase == "available":
-        lines.append(" ".join(notes.split())[:400])
+        lines.append("What's new:\n" + " ".join(notes.split())[:400])
     if status.get("gate") or status.get("mutation_enabled") is False:
-        lines.append("Experimental preview: installation is locked until the safety gates pass.")
+        lines.append("Updates aren't enabled on this device.")
     return "\n".join(lines)
 
 
@@ -266,7 +313,7 @@ def badge(status):
     if phase == "available":
         return "Updates - new version available"
     if phase == "ready_to_restart":
-        return "Updates - restart ready"
+        return "Updates - ready to restart"
     if phase in ("failed", "rolled_back", "recovery_required") and not status.get("notice_dismissed"):
         return "Updates - attention needed"
     if phase in BUSY:
@@ -283,7 +330,7 @@ def actions(status):
     if phase not in BUSY and phase != "ready_to_restart":
         result.append(("Check for Updates", "check"))
     if phase == "ready_to_restart":
-        result.append(("Refresh Status", "status"))
+        result.append(("Refresh", "status"))
     if phase == "available" and status.get("install_enabled") is True:
         result.append(("Install Update", "install"))
     if phase == "ready_to_restart" and status.get("can_restart") is True:
@@ -291,7 +338,7 @@ def actions(status):
     if status.get("can_cancel") is True:
         result.append(("Cancel Update", "cancel"))
     if phase in ("failed", "rolled_back") and not status.get("notice_dismissed"):
-        result.append(("Dismiss Notice", "dismiss"))
+        result.append(("Dismiss", "dismiss"))
     return result
 
 
@@ -325,11 +372,8 @@ class Updates:
                     raise ValueError("Invalid update-service response")
                 result = (value, "")
             except (OSError, RuntimeError, ValueError) as exc:
-                message = str(exc)[:400]
-                if command == "check":
-                    message = "Unable to check for updates.\n" + message
-                result = (None, message)
-                print("Cloudplay update client: " + result[1], file=sys.stderr)
+                print("Cloudplay update client: " + str(exc)[:400], file=sys.stderr)
+                result = (None, request_error(command, {"code": getattr(exc, "code", None)}))
             self.results.put(result)
 
     def submit(self, command):

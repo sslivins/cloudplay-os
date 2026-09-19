@@ -39,6 +39,28 @@ class UnsignedPreflightTests(unittest.TestCase):
 
 
 class SigningWorkflowTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "requires Bash")
+    def test_user_notes_length_and_empty_input_gate(self):
+        workflow = (ROOT / ".github/workflows/release-ota.yml").read_text()
+        start = workflow.index('if [[ -z "${RELEASE_NOTES')
+        validation = workflow[start:workflow.index("\n          fi", start) + len("\n          fi")]
+        for notes, accepted in (("", False), (" \n\t", False), ("x" * 320, True),
+                                ("x" * 321, False), ("Clearer progress.\nSettings improvements.", True)):
+            with self.subTest(length=len(notes)):
+                result = subprocess.run(["bash", "-c", validation],
+                                        env=dict(os.environ, RELEASE_NOTES=notes),
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+
+    def test_release_notes_describe_changes_without_packaging_jargon(self):
+        workflow = (ROOT / ".github/workflows/release-ota.yml").read_text()
+        self.assertIn("RELEASE_NOTES: ${{ inputs.release_notes }}", workflow)
+        self.assertIn('--notes "$RELEASE_NOTES"', workflow)
+        self.assertIn("Beta release for testing.", workflow)
+        self.assertIn('${#RELEASE_NOTES} -gt 320', workflow)
+        self.assertNotIn("Signed experimental A/B image and OTA bundle.", workflow)
+        self.assertNotIn("Hardware acceptance and publication are separate gates. Build:", workflow)
+
     def test_release_is_protected_main_only_and_draft(self):
         workflow = (ROOT / ".github/workflows/release-ota.yml").read_text()
         self.assertIn("if: github.ref == 'refs/heads/main'", workflow)

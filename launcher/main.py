@@ -10,7 +10,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
-from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text, error_detail
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -510,15 +510,15 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if browser.service:
             return
         channel = updates.status.get("channel") if updates else None
-        description = ("Get new features before their general release.\n"
-                       "Beta releases may be less stable.\n"
-                       "Turning this off does not downgrade your installed version;\n"
-                       "you will receive a stable release when a newer one is available.")
+        description = ("Try new features before they're available to everyone.\n"
+                       "Beta releases may have bugs.\n"
+                       "Turning this off keeps your current version.\n"
+                       "You'll get regular updates when a newer version is available.")
         state = "On" if channel == "beta" else "Off" if channel == "stable" else "Checking..."
         message = f"Beta releases: {state}\n\n{description}"
         choices = []
         if updates is None:
-            message = "Beta release preferences are not enabled on this image."
+            message = "Beta releases aren't available on this installation."
         elif trusted_updates:
             if updates.status.get("channel_change_enabled") is True and channel in ("stable", "beta"):
                 command = "disable_beta" if channel == "beta" else "enable_beta"
@@ -531,7 +531,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         error = (updates.error or updates.status.get("error")) if updates else None
         if error:
-            message += "\n" + str(error)[:400]
+            message += "\n" + (error if isinstance(error, str) else error_detail(error))
         if note:
             message += "\n" + note
         key = tuple(choice[0] for choice in choices)
@@ -556,7 +556,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if updates is None:
             show("SYSTEM UPDATES",
                  [("Back to Settings", show_settings, "go-previous-symbolic", True)],
-                 "System updates are not enabled on this image.")
+                 "Updates aren't available on this installation.")
             updates_screen = True
             return
         choices = [(label, lambda command=command: update_action(command),
@@ -569,7 +569,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             if updates.status.get("provider_launch_allowed") is True:
                 choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
             if not choices:
-                choices.append(("Refresh Status", lambda: submit_update("status"),
+                choices.append(("Refresh", lambda: submit_update("status"),
                                 "view-refresh-symbolic", False))
         else:
             choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
@@ -604,12 +604,12 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             return
         if command in ("install", "restart"):
             label = "Install Update" if command == "install" else "Restart to Update"
-            note = ("Gaming will be unavailable while Cloudplay installs and checks your update.\n"
-                    "This can take several minutes. Keep power connected.\n"
+            note = ("You won't be able to play while the update installs.\n"
+                    "This may take several minutes. Keep power connected.\n"
                     "We'll ask you to restart when it's ready."
                     if command == "install" else
-                    "Cloudplay will check the files again before restarting.\n"
-                    "It will then check the updated system. Keep power connected.")
+                    "Cloudplay will check your update, then restart to finish installing it.\n"
+                    "Keep power connected until the update is complete.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
                   (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
@@ -632,9 +632,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         except (OSError, RuntimeError, subprocess.SubprocessError):
             confirming = True
             recovering = True
-            show("Streaming browser did not close",
+            show("Could not return to the Main Menu",
                  [("Try Again", home, "view-refresh-symbolic", False)],
-                 "Cloudplay OS must close it safely before returning to the Main Menu.")
+                 "Please try again to close the game and return to the Main Menu.")
             return
         confirming = False
         recovering = False
@@ -646,7 +646,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         nonlocal confirming
         if updates is not None and (
                 updates.error or updates.status.get("provider_launch_allowed") is not True):
-            home("The update service has not cleared this session to launch. Check System Updates.")
+            home("Please open System Updates before starting a game.")
             return
         try:
             browser.start(service)
@@ -751,9 +751,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             next_check = time.monotonic() + 1
             try:
                 if browser.exited():
-                    home("The streaming service closed. Choose where to play.")
+                    home("Your game closed. Choose where to play.")
             except (OSError, RuntimeError, subprocess.SubprocessError):
-                home("The streaming session ended unexpectedly. Choose where to play.")
+                home("Your game closed unexpectedly. Choose where to play.")
         if control.poll():
             ask_home()
         if updates is not None and updates.poll():

@@ -175,6 +175,14 @@ mislabelled as installation failures; rollback and recovery messages retain prio
 Brief action feedback names the action (for example, "Checking for updates..."),
 not the internal request. Every service reply refreshes the presentation, even if
 the status is unchanged, so completed checks cannot leave temporary feedback stuck.
+User-facing copy describes the task and next action, not partitions, permissions,
+signatures, session identities, or safety-gate internals. Failures show plain-language
+guidance and a bounded `Reference: CODE`; raw backend details remain in updater/client
+logs rather than appearing on the TV. Unknown codes get neutral help text, never
+an invented cause or a promise that retrying is safe. Release notes are labelled
+"What's new" and describe user-visible changes. An available release is labelled
+"Cloudplay OS VERSION is available"; the "Updating..." heading starts with the
+installation flow, not while merely browsing an offer.
 
 The native screen separates a fixed target-version header ("Updating Cloudplay OS
 to VERSION", without the currently installed version), a graphical five-stage

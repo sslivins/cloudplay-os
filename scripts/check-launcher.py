@@ -236,7 +236,7 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 12:
         assert not progress_widgets["bar"].get_visible()
-        assert "Current task: 1:05 elapsed" in titles
+        assert "Elapsed: 1:05" in titles
         assert any("Saving system files" in text for text in titles)
         check_timeline(window, 3)
         snapshot(window, "update-storage-wait")
@@ -406,7 +406,7 @@ def drive():
         titles = [w.get_text() for w in children if isinstance(w, Gtk.Label)]
         title = next((text for text in titles if text in (
             "MAIN MENU", "GeForce NOW", "Xbox Cloud Gaming",
-            "Streaming browser did not close")), "")
+            "Could not return to the Main Menu")), "")
         buttons = [w for w in children if isinstance(w, Gtk.Button)]
         if trusted_mode:
             keep_running = drive_trusted(window, buttons, titles)
@@ -440,7 +440,7 @@ def drive():
             assert browser.service == "gfn" and window.get_visible()
             pads.actions = ["back"]  # Stop failure must not be dismissible to an empty screen.
         elif step == 4:
-            assert title == "Streaming browser did not close" and len(buttons) == 1
+            assert title == "Could not return to the Main Menu" and len(buttons) == 1
             assert window.get_visible()
             browser.fail_stop = False
             buttons[0].clicked()
@@ -466,7 +466,7 @@ def drive():
             buttons[0].clicked()
         elif step == 10:
             assert "SYSTEM UPDATES" in titles
-            assert "System updates are not enabled on this image." in titles
+            assert "Updates aren't available on this installation." in titles
             press(window, Gdk.KEY_Escape)
         elif step == 11:
             assert "SETTINGS" in titles

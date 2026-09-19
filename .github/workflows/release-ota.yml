@@ -10,6 +10,10 @@ on:
         description: Oldest compatible installed OTA version (without v)
         required: true
         type: string
+      release_notes:
+        description: Plain-language changes shown in System Updates (up to 320 characters)
+        required: true
+        type: string
       platform:
         description: Hardware with committed prerequisite policy
         required: true
@@ -37,6 +41,7 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
       CLOUDPLAY_OTA_MINIMUM_VERSION: ${{ inputs.minimum_version }}
       CLOUDPLAY_OTA_PLATFORM: ${{ inputs.platform }}
       CLOUDPLAY_OTA_KEY_EPOCH: ${{ inputs.key_epoch }}
@@ -52,6 +57,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ -z "${RELEASE_NOTES//[[:space:]]/}" || ${#RELEASE_NOTES} -gt 320 ]]; then
+            echo "::error::Provide 1-320 characters describing the changes for users."
+            exit 1
+          fi
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
           [[ "$CLOUDPLAY_OTA_KEY_EPOCH" =~ ^[1-9][0-9]*$ ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
@@ -122,6 +131,6 @@ jobs:
              and .both_slot_manifests_verified == true and .production_baseline == false' provenance.json
           [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" == "$GITHUB_SHA" ]]
           gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease \
-            --title "Cloudplay OS $RELEASE_TAG - OTA beta" \
-            --notes "Signed experimental A/B image and OTA bundle. Hardware acceptance and publication are separate gates. Build: $CLOUDPLAY_OTA_WORKFLOW" \
+            --title "Cloudplay OS $RELEASE_TAG - Beta" \
+            --notes "$RELEASE_NOTES"$'\n\nBeta release for testing.' \
             ./*
