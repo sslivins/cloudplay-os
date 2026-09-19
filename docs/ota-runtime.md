@@ -237,8 +237,10 @@ Wire request: one UTF-8 JSON line with exactly `{"command":"status"}` (or
 `check`, `install`, `cancel`, `restart`). Maximum request is 1024 bytes;
 response is 65536 bytes. The daemon imposes a 3-second total request deadline,
 four simultaneous clients, one operation worker, and at least one second
-between state-changing requests from each authorized identity. Discovery adds
-its own 30-minute forced-check limit and persistent backoff.
+between state-changing requests from each authorized identity. Manual checks
+revalidate with GitHub immediately unless persistent failure backoff is active;
+backoff is reported as a check failure rather than a cached successful result.
+Automatic checks retain their six-hour schedule.
 
 The daemon authenticates the kernel's Linux `SO_PEERCRED`, not a UID claimed in
 JSON. Only root and `launcher_uid` are allowed. The socket directory is

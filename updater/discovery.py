@@ -20,7 +20,6 @@ API_LIMIT = 2 * 1024**2
 CACHE_LIMIT = 8 * 1024**2
 MAX_PAGES = 20
 MAX_REDIRECTS = 5
-MIN_MANUAL_CHECK = 1800
 ASSET_HOSTS = frozenset({"github.com", "release-assets.githubusercontent.com",
                         "objects.githubusercontent.com"})
 
@@ -290,9 +289,8 @@ class Discovery:
     def check(self, current_version: str, *, force=False) -> dict | None:
         SemVer.parse(current_version)
         now = self.clock()
-        too_soon = self.last_successful_check is not None and now < self.last_successful_check + MIN_MANUAL_CHECK
-        if now < self.next_check_at and (not force or self._failures or too_soon):
-            if not self._complete:
+        if now < self.next_check_at and (not force or self._failures):
+            if force or not self._complete:
                 raise DiscoveryError("BACKOFF", "next discovery attempt is scheduled later")
             return self._choose([r for page in self._pages.values() for r in page["data"]], current_version)
         active = {}
