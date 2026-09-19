@@ -16,7 +16,7 @@ from .discovery import Discovery, DiscoveryError
 from .platform import LinuxPlatform
 from .state import Config, Journal, UpdateError, fail, read_json, trusted_path
 
-COMMANDS = frozenset({"status", "check", "install", "cancel", "restart"})
+COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"})
 DESTRUCTIVE = frozenset({"invalidating", "staging_boot", "staging_root",
                          "verifying_slot", "publishing"})
 BUSY = DESTRUCTIVE | {"checking", "downloading", "verifying"}
@@ -29,8 +29,9 @@ class Runtime:
         self.config = config
         self.journal = Journal(Path(config.state_dir))
         self.platform = platform or LinuxPlatform(config)
+        channel = self.journal.load().get("channel", config.channel) if self.journal.path.exists() else config.channel
         self.discovery = discovery or Discovery(
-            config.repo, config.channel, platform=config.platform,
+            config.repo, channel, platform=config.platform,
             cache_file=Path(config.state_dir) / "discovery.json")
         self.verifier, self.clock = verifier, clock
         self.cancelled = threading.Event()
@@ -89,6 +90,9 @@ class Runtime:
                     else state.get("progress"))
         return dict(
             phase=phase, current_version=state["current_version"],
+            channel=state.get("channel", self.config.channel),
+            channel_change_enabled=state["pending"] is None and state["phase"] not in BUSY | {
+                "ready_to_restart", "tryboot_running", "promoting", "recovery_required"},
             highest_version=state["highest_version"],
             available_version=available["version"] if available else None,
             candidate_version=pending["metadata"]["version"] if pending else None,
@@ -108,8 +112,10 @@ class Runtime:
             next_check_at=self.discovery.next_check_at,
         )
 
-    def _error(self, exc):
+    def _error(self, exc, *, command=None):
         error = dict(code=getattr(exc, "code", "IO"), message=str(exc)[:2048])
+        if command is not None:
+            error["command"] = command
         if self.journal.path.exists():
             self.journal.update(phase="failed", error=error)
         return error
@@ -150,7 +156,7 @@ class Runtime:
                 self.journal.update(phase="available" if release else "idle",
                                     available=release, progress=None, error=None)
             except ERRORS as exc:
-                self._error(exc)
+                self._error(exc, command="check")
                 raise
         return self.status()
 
@@ -160,6 +166,25 @@ class Runtime:
             if self._destructive or phase not in ("downloading", "verifying"):
                 fail("CANCEL_TOO_LATE", "cancellation is only allowed before slot invalidation")
             self.cancelled.set()
+        return self.status()
+
+    def enable_beta(self):
+        return self._set_channel("beta")
+
+    def disable_beta(self):
+        return self._set_channel("stable")
+
+    def _set_channel(self, channel):
+        with self.journal.operation():
+            state = self.journal.load()
+            if not self.status()["channel_change_enabled"]:
+                fail("BUSY", "Finish the current update before changing beta preferences")
+            if state.get("channel", self.config.channel) != channel:
+                discovery = Discovery(self.config.repo, channel, platform=self.config.platform,
+                                      cache_file=Path(self.config.state_dir) / "discovery.json")
+                self.journal.update(channel=channel, available=None, error=None,
+                                    phase="idle" if state["phase"] in ("available", "failed") else state["phase"])
+                self.discovery = discovery
         return self.status()
 
     def _cancel_check(self):
@@ -206,7 +231,7 @@ class Runtime:
                 self.journal.update(phase="verifying", progress=None)
                 metadata = self.verifier(
                     bundle, signature, Path(self.config.keys_dir), extracted,
-                    platform=self.config.platform, channel=self.config.channel,
+                    platform=self.config.platform, channel=state.get("channel", self.config.channel),
                     current_version=state["current_version"],
                     highest_version=state["highest_version"],
                     minimum_key_epoch=max(state["minimum_key_epoch"], self.config.minimum_key_epoch),

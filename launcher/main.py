@@ -10,7 +10,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
-from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text, error_detail
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -53,7 +53,8 @@ def main():
     run(browser, control, Gamepads(), Updates() if OTA_ENABLED.is_file() else None)
 
 
-def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbeats=None):
+def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbeats=None,
+        start_page="updates"):
     os.environ["GDK_BACKEND"] = "wayland"
     import gi
     gi.require_version("Gtk", "3.0")
@@ -227,8 +228,13 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     closing = False
     next_check = 0
     updates_screen = False
+    settings_screen = False
+    settings_channel = None
+    beta_screen = False
+    beta_choices = None
     update_confirmation = False
     update_notice = None
+    settings_shortcut = None
     update_message = None
     update_progress = None
     update_choices = None
@@ -367,15 +373,20 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
 
     def show(title, choices, note="", services=False, return_help=False, activity=False,
              stages=()):
-        nonlocal updates_screen, update_confirmation, update_notice
+        nonlocal updates_screen, settings_screen, beta_screen, beta_choices
+        nonlocal update_confirmation, update_notice, settings_shortcut
         nonlocal update_message, update_progress, update_choices
         nonlocal update_journey, update_activity_text, update_version
         updates_screen = False
+        settings_screen = title == "SETTINGS"
+        beta_screen = title == "BETA RELEASES"
+        beta_choices = None
         update_confirmation = title == "CONFIRM UPDATE"
-        if update_notice is not None:
-            overlay.remove(update_notice)
-            update_notice.destroy()
-        update_notice = None
+        for shortcut in (update_notice, settings_shortcut):
+            if shortcut is not None:
+                overlay.remove(shortcut)
+                shortcut.destroy()
+        update_notice = settings_shortcut = None
         update_message = update_progress = update_choices = None
         update_journey = update_activity_text = update_version = None
         for child in box.get_children():
@@ -387,7 +398,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         add_brand(compact=update_page)
         box.pack_start(style(Gtk.Label(label=title), "page-title"), False, False, 0)
         if update_page:
-            update_version = style(Gtk.Label(label=version_text(updates.status)), "update-version")
+            update_version = style(Gtk.Label(label=version_text(updates.status if updates else {})), "update-version")
             update_version.set_line_wrap(True)
             update_version.set_max_width_chars(68)
             update_version.set_justify(Gtk.Justification.CENTER)
@@ -421,8 +432,18 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             buttons.append(button)
         if return_help:
             add_return_help()
+        if services:
+            settings_shortcut = style(Gtk.Button(label="Settings"), "updates-shortcut")
+            settings_shortcut.set_halign(Gtk.Align.START)
+            settings_shortcut.set_valign(Gtk.Align.START)
+            settings_shortcut.set_margin_top(pixels(40))
+            settings_shortcut.set_margin_start(pixels(56))
+            settings_shortcut.connect("clicked", lambda _: show_settings())
+            overlay.add_overlay(settings_shortcut)
+            buttons.append(settings_shortcut)
         if services and updates is not None:
             update_notice = style(Gtk.Button(label=update_badge(updates.status)), "updates-shortcut")
+            update_notice.set_no_show_all(True)
             bell = GdkPixbuf.Pixbuf.new_from_file_at_scale(
                 str(LOGO.with_name("updates-bell.svg")), pixels(28), pixels(28), True)
             update_notice.set_image(Gtk.Image.new_from_pixbuf(bell))
@@ -431,9 +452,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_notice.set_valign(Gtk.Align.START)
             update_notice.set_margin_top(pixels(40))
             update_notice.set_margin_end(pixels(56))
-            update_notice.connect("clicked", lambda _: show_updates())
+            update_notice.connect("clicked", lambda _: open_updates())
             overlay.add_overlay(update_notice)
-            buttons.append(update_notice)
+            refresh_update_notice()
         # Remapping creates a newly focused native view, even over a fullscreen
         # service/error page. Never rely on JavaScript or focus inside Chromium.
         window.hide()
@@ -442,22 +463,116 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         window.present()
         buttons[home_focus if services else 0].grab_focus()
 
+    def refresh_update_notice():
+        label = update_badge(updates.status)
+        visible = label != "Updates"
+        update_notice.set_label(label)
+        if visible and update_notice not in buttons:
+            buttons.append(update_notice)
+        elif not visible and update_notice in buttons:
+            if window.get_focus() is update_notice:
+                settings_shortcut.grab_focus()
+            buttons.remove(update_notice)
+        update_notice.set_visible(visible)
+
+    def show_settings():
+        nonlocal settings_channel
+        if browser.service:
+            return
+        if trusted_updates and updates.status.get("provider_launch_allowed") is not True:
+            show_updates()
+            return
+        channel = updates.status.get("channel") if updates else None
+        settings_channel = channel
+        beta_label = "Beta Releases" + (" - On" if channel == "beta" else
+                                       " - Off" if channel == "stable" else "")
+        show("SETTINGS",
+             [("System Updates", open_updates, "software-update-available-symbolic", False),
+              (beta_label, open_beta, "preferences-system-symbolic", False),
+              ("Main Menu", lambda: submit_update("close") if trusted_updates else home(),
+               "go-home-symbolic", True)])
+
+    def open_beta():
+        if browser.service:
+            return
+        if updates is not None and not trusted_updates:
+            accepted = updates.submit("open-beta")
+            show_beta(request_text("open-beta") if accepted else "")
+        else:
+            show_beta()
+
+    def submit_beta(command):
+        if updates.submit(command):
+            show_beta(request_text(command))
+
+    def show_beta(note=""):
+        nonlocal beta_choices
+        if browser.service:
+            return
+        channel = updates.status.get("channel") if updates else None
+        description = ("Try new features before they're available to everyone.\n"
+                       "Beta releases may have bugs.\n"
+                       "Turning this off keeps your current version.\n"
+                       "You'll get regular updates when a newer version is available.")
+        state = "On" if channel == "beta" else "Off" if channel == "stable" else "Checking..."
+        message = f"Beta releases: {state}\n\n{description}"
+        choices = []
+        if updates is None:
+            message = "Beta releases aren't available on this installation."
+        elif trusted_updates:
+            if updates.status.get("channel_change_enabled") is True and channel in ("stable", "beta"):
+                command = "disable_beta" if channel == "beta" else "enable_beta"
+                choices.append(("Turn Off Beta Releases" if channel == "beta" else "Turn On Beta Releases",
+                                lambda: submit_beta(command), "preferences-system-symbolic", False))
+            elif channel in ("stable", "beta"):
+                message += "\nFinish the current update before changing this preference."
+        elif updates.error:
+            choices.append(("Try Again", open_beta, "view-refresh-symbolic", False))
+        choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
+        error = (updates.error or updates.status.get("error")) if updates else None
+        if error:
+            message += "\n" + (error if isinstance(error, str) else error_detail(error))
+        if note:
+            message += "\n" + note
+        key = tuple(choice[0] for choice in choices)
+        if not beta_screen or beta_choices != key:
+            show("BETA RELEASES", choices, message)
+            beta_choices = key
+        else:
+            update_message.set_text(message)
+
+    def open_updates():
+        if browser.service:
+            return
+        if updates is not None and not trusted_updates:
+            submit_update("open")
+        else:
+            show_updates()
+
     def show_updates(note=""):
         nonlocal updates_screen, update_choices
-        if updates is None or browser.service:
+        if browser.service:
+            return
+        if updates is None:
+            show("SYSTEM UPDATES",
+                 [("Back to Settings", show_settings, "go-previous-symbolic", True)],
+                 "Updates aren't available on this installation.")
+            updates_screen = True
             return
         choices = [(label, lambda command=command: update_action(command),
                     "software-update-available-symbolic", False)
                    for label, command in update_actions(updates.status)]
+        if not trusted_updates:
+            choices = ([("Try Again", open_updates, "view-refresh-symbolic", False)]
+                       if updates.error else [])
         if trusted_updates:
             if updates.status.get("provider_launch_allowed") is True:
-                choices.append(("Return to Main Menu", lambda: submit_update("close"),
-                                "go-home-symbolic", True))
+                choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
             if not choices:
-                choices.append(("Refresh Status", lambda: submit_update("status"),
+                choices.append(("Refresh", lambda: submit_update("status"),
                                 "view-refresh-symbolic", False))
         else:
-            choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
+            choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         message = note or updates.error or update_summary(updates.status, include_progress=False)
         activity = updates.status.get("phase") in UPDATE_BUSY and not updates.error
         stages = journey(updates.status)
@@ -489,12 +604,12 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             return
         if command in ("install", "restart"):
             label = "Install Update" if command == "install" else "Restart to Update"
-            note = ("Gaming will be unavailable while Cloudplay installs and checks your update.\n"
-                    "This can take several minutes. Keep power connected.\n"
+            note = ("You won't be able to play while the update installs.\n"
+                    "This may take several minutes. Keep power connected.\n"
                     "We'll ask you to restart when it's ready."
                     if command == "install" else
-                    "Cloudplay will check the files again before restarting.\n"
-                    "It will then check the updated system. Keep power connected.")
+                    "Cloudplay will check your update, then restart to finish installing it.\n"
+                    "Keep power connected until the update is complete.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
                   (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
@@ -503,9 +618,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
 
     def submit_update(command):
         if updates.submit(command):
-            show_updates("Sending update request...")
+            show_updates(request_text(command))
         else:
-            show_updates("An update request is already in progress.")
+            show_updates()
 
     def home(note=""):
         nonlocal confirming, recovering
@@ -517,9 +632,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         except (OSError, RuntimeError, subprocess.SubprocessError):
             confirming = True
             recovering = True
-            show("Streaming browser did not close",
+            show("Could not return to the Main Menu",
                  [("Try Again", home, "view-refresh-symbolic", False)],
-                 "Cloudplay OS must close it safely before returning to the Main Menu.")
+                 "Please try again to close the game and return to the Main Menu.")
             return
         confirming = False
         recovering = False
@@ -531,7 +646,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         nonlocal confirming
         if updates is not None and (
                 updates.error or updates.status.get("provider_launch_allowed") is not True):
-            home("The update service has not cleared this session to launch. Check System Updates.")
+            home("Please open System Updates before starting a game.")
             return
         try:
             browser.start(service)
@@ -556,7 +671,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     def ask_home():
         nonlocal confirming
         if not browser.service:
-            if not window.get_visible() or updates_screen or update_confirmation:
+            if not window.get_visible() or updates_screen or update_confirmation or settings_screen or beta_screen:
                 home()
             return
         if confirming:
@@ -580,7 +695,18 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         elif action == "back" and update_confirmation:
             show_updates()
         elif action == "back" and updates_screen:
-            home()
+            if trusted_updates:
+                if updates.status.get("provider_launch_allowed") is True:
+                    show_settings()
+            else:
+                show_settings()
+        elif action == "back" and beta_screen:
+            show_settings()
+        elif action == "back" and settings_screen:
+            if trusted_updates:
+                submit_update("close")
+            else:
+                home()
         elif action == "accept":
             focus = window.get_focus()
             if focus in buttons:
@@ -588,13 +714,20 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         elif action in ("up", "left", "down", "right"):
             focus = window.get_focus()
             index = buttons.index(focus) if focus in buttons else 0
-            if update_notice is not None:
-                if action == "up" and focus is not update_notice:
+            if settings_shortcut is not None:
+                shortcuts = [settings_shortcut]
+                if update_notice is not None and update_notice.get_visible():
+                    shortcuts.append(update_notice)
+                if action == "up" and focus not in shortcuts:
                     home_focus = min(index, len(SERVICES) - 1)
-                    update_notice.grab_focus()
+                    shortcuts[-1].grab_focus()
                     return
-                if action == "down" and focus is update_notice:
-                    buttons[home_focus].grab_focus()
+                if focus in shortcuts:
+                    if action in ("up", "down"):
+                        buttons[home_focus].grab_focus()
+                    else:
+                        shortcuts[(shortcuts.index(focus) + (-1 if action == "left" else 1))
+                                  % len(shortcuts)].grab_focus()
                     return
             buttons[(index + (-1 if action in ("up", "left") else 1)) % len(buttons)].grab_focus()
 
@@ -618,16 +751,24 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             next_check = time.monotonic() + 1
             try:
                 if browser.exited():
-                    home("The streaming service closed. Choose where to play.")
+                    home("Your game closed. Choose where to play.")
             except (OSError, RuntimeError, subprocess.SubprocessError):
-                home("The streaming session ended unexpectedly. Choose where to play.")
+                home("Your game closed unexpectedly. Choose where to play.")
         if control.poll():
             ask_home()
         if updates is not None and updates.poll():
             if updates_screen and not browser.service:
                 show_updates()
+            elif beta_screen and not browser.service:
+                show_beta()
+            elif settings_screen and not browser.service:
+                if updates.status.get("channel") != settings_channel:
+                    focus = window.get_focus()
+                    index = buttons.index(focus) if focus in buttons else 0
+                    show_settings()
+                    buttons[min(index, len(buttons) - 1)].grab_focus()
             elif update_notice is not None:
-                update_notice.set_label(update_badge(updates.status))
+                refresh_update_notice()
         for action in pads.poll(window.get_visible()):
             navigate(action)
         return True
@@ -641,7 +782,10 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     window.connect("delete-event", lambda *_: True)
     window.connect("key-press-event", key)
     try:
-        home()
+        if trusted_updates and start_page == "beta":
+            show_beta()
+        else:
+            home()
         GLib.timeout_add(50, tick)
         Gtk.main()
     finally:

@@ -73,6 +73,8 @@ class Updates:
     def __init__(self):
         self.status = {"phase": "available", "install_enabled": True,
                        "provider_launch_allowed": True,
+                       "requires_trusted_session": not trusted_mode,
+                       "channel": "beta", "channel_change_enabled": trusted_mode,
                        "current_version": "0.1.0-beta.3", "available_version": "0.1.0-beta.4"}
         self.error = ""
         self.changed = False
@@ -80,6 +82,8 @@ class Updates:
 
     def submit(self, command):
         self.commands.append(command)
+        if command in ("enable_beta", "disable_beta"):
+            self.status["channel"] = "beta" if command == "enable_beta" else "stable"
         self.status["phase"] = {"install": "ready_to_restart", "dismiss": "idle"}.get(command, "available")
         self.status["can_restart"] = self.status["phase"] == "ready_to_restart"
         self.status["provider_launch_allowed"] = self.status["phase"] in ("idle", "available")
@@ -232,7 +236,7 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 12:
         assert not progress_widgets["bar"].get_visible()
-        assert "Current task: 1:05 elapsed" in titles
+        assert "Elapsed: 1:05" in titles
         assert any("Saving system files" in text for text in titles)
         check_timeline(window, 3)
         snapshot(window, "update-storage-wait")
@@ -271,7 +275,34 @@ def drive_trusted(window, buttons, titles):
             path = Path(os.environ["XDG_RUNTIME_DIR"]) / (name + "-heartbeat.json")
             assert path.is_file(), "Missing real Wayland/GTK heartbeat: " + name
         buttons[-1].clicked()
-        assert updates.commands == ["install", "close"]
+    elif step == 18:
+        assert "SETTINGS" in titles and len(buttons) == 3
+        buttons[1].clicked()
+    elif step == 19:
+        assert "BETA RELEASES" in titles and len(buttons) == 2
+        assert any("Beta releases: On" in text for text in titles)
+        snapshot(window, "beta-releases-on")
+        buttons[0].clicked()
+    elif step == 20:
+        assert any("Beta releases: Off" in text for text in titles)
+        assert updates.commands == ["install", "disable_beta"]
+        snapshot(window, "beta-releases-off")
+        buttons[0].clicked()
+    elif step == 21:
+        assert any("Beta releases: On" in text for text in titles)
+        updates.status.update(channel_change_enabled=False)
+        updates.changed = True
+    elif step == 22:
+        assert len(buttons) == 1
+        assert any("Finish the current update" in text for text in titles)
+        updates.status.update(channel_change_enabled=True)
+        updates.changed = True
+    elif step == 23:
+        buttons[-1].clicked()
+    elif step == 24:
+        assert "SETTINGS" in titles
+        buttons[-1].clicked()
+        assert updates.commands == ["install", "disable_beta", "enable_beta", "close"]
         done = True
         Gtk.main_quit()
         return False
@@ -281,54 +312,86 @@ def drive_trusted(window, buttons, titles):
 def drive_updates(window, children, buttons, titles):
     global done
     if step == 0:
-        assert "MAIN MENU" in titles and len(buttons) == 3
+        assert "MAIN MENU" in titles and len(buttons) == 4
         snapshot(window, "main-menu-updates")
-        assert "new version available" in buttons[2].get_label()
+        assert buttons[2].get_label() == "Settings"
+        assert "new version available" in buttons[3].get_label()
         assert window.get_focus() is buttons[0], "Updates stole initial gaming focus"
-        assert buttons[2].get_valign() == Gtk.Align.START
+        assert buttons[3].get_valign() == Gtk.Align.START
         buttons[1].grab_focus()
         press(window, Gdk.KEY_Up)
-        assert window.get_focus() is buttons[2]
+        assert window.get_focus() is buttons[3]
         press(window, Gdk.KEY_Down)
         assert window.get_focus() is buttons[1], "Down did not return to the previous provider"
-        buttons[2].clicked()
+        press(window, Gdk.KEY_Up)
+        press(window, Gdk.KEY_Left)
+        assert window.get_focus() is buttons[2]
+        press(window, Gdk.KEY_Return)
     elif step == 1:
-        assert "SYSTEM UPDATES" in titles and len(buttons) == 3
-        buttons[1].clicked()
-        assert window.get_focus() != buttons[1]
-        pads.actions = ["back"]
+        assert "SETTINGS" in titles and len(buttons) == 3
+        snapshot(window, "settings")
+        assert window.get_focus() is buttons[0]
+        buttons[0].clicked()
+        assert updates.commands == ["open"], "Settings must open the isolated updater directly"
     elif step == 2:
-        assert "SYSTEM UPDATES" in titles
-        buttons[1].clicked()
-        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
-        assert window.get_focus() == confirmation[0]
-        assert updates.commands == []
-        confirmation[1].clicked()
+        assert "SYSTEM UPDATES" in titles and len(buttons) == 1
+        assert not any("browser-free" in text or "Open Update Controls" in text for text in titles)
+        press(window, Gdk.KEY_Escape)
     elif step == 3:
-        assert "SYSTEM UPDATES" in titles and updates.commands == ["install"]
-        buttons[1].clicked()
-        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
-        confirmation[0].clicked()
-        assert updates.commands == ["install"]
+        assert "SETTINGS" in titles
+        press(window, Gdk.KEY_Escape)
     elif step == 4:
-        updates.status["phase"] = "rolled_back"
+        assert "MAIN MENU" in titles
+        buttons[3].clicked()
+        assert updates.commands == ["open", "open"], "Bell must open the same isolated updater"
+        updates.error = "System Updates could not be opened"
         updates.changed = True
     elif step == 5:
-        assert "SYSTEM UPDATES" in titles
-        assert any("previous system was restored" in text for text in titles)
-        buttons[1].clicked()
-    elif step == 6:
-        assert updates.commands == ["install", "dismiss"]
-        buttons[-1].clicked()
-    elif step == 7:
-        assert "MAIN MENU" in titles and len(buttons) == 3
+        assert "SYSTEM UPDATES" in titles and len(buttons) == 2
+        assert updates.error in titles
         buttons[0].clicked()
-        control.pending = True
+        assert updates.commands == ["open", "open", "open"]
+        updates.error = ""
+        updates.changed = True
+    elif step == 6:
+        press(window, Gdk.KEY_Escape)
+    elif step == 7:
+        assert "SETTINGS" in titles
+        control.pending = True  # Home shortcut also works from Settings.
     elif step == 8:
-        assert "GeForce NOW" in titles and len(buttons) == 3
-        buttons[2].clicked()
+        assert "MAIN MENU" in titles
+        buttons[3].grab_focus()
+        updates.status.update(phase="idle", last_successful_check=10)
+        updates.changed = True
     elif step == 9:
-        assert "MAIN MENU" in titles and browser.service is None
+        visible = [button for button in buttons if button.get_visible()]
+        assert len(visible) == 3, "Bell should be hidden without a notification"
+        assert window.get_focus() is buttons[2], "Disappearing notification lost keyboard focus"
+        snapshot(window, "main-menu-no-updates")
+        press(window, Gdk.KEY_Down)
+        assert window.get_focus() is buttons[1]
+        updates.status.update(phase="available")
+        updates.changed = True
+    elif step == 10:
+        assert len([button for button in buttons if button.get_visible()]) == 4
+        assert window.get_focus() is buttons[1], "New notification stole focus"
+        updates.status.update(phase="idle")
+        updates.changed = True
+    elif step == 11:
+        buttons[2].clicked()
+    elif step == 12:
+        assert "SETTINGS" in titles, "Settings must remain available without a notification"
+        buttons[0].clicked()
+        assert updates.commands == ["open"] * 4
+    elif step == 13:
+        press(window, Gdk.KEY_Escape)
+    elif step == 14:
+        assert "SETTINGS" in titles
+        buttons[1].clicked()
+        assert updates.commands == ["open"] * 4 + ["open-beta"]
+    elif step == 15:
+        assert "BETA RELEASES" in titles and len(buttons) == 1
+        assert not browser.starts, "Settings navigation must not start a game"
         done = True
         Gtk.main_quit()
         return False
@@ -343,7 +406,7 @@ def drive():
         titles = [w.get_text() for w in children if isinstance(w, Gtk.Label)]
         title = next((text for text in titles if text in (
             "MAIN MENU", "GeForce NOW", "Xbox Cloud Gaming",
-            "Streaming browser did not close")), "")
+            "Could not return to the Main Menu")), "")
         buttons = [w for w in children if isinstance(w, Gtk.Button)]
         if trusted_mode:
             keep_running = drive_trusted(window, buttons, titles)
@@ -354,7 +417,7 @@ def drive():
             step += 1
             return keep_running
         if step == 0:
-            assert title == "MAIN MENU" and len(buttons) == 2
+            assert title == "MAIN MENU" and len(buttons) == 3
             assert window.get_mapped()
             buttons[0].clicked()
             assert browser.service == "gfn" and not window.get_visible()
@@ -377,7 +440,7 @@ def drive():
             assert browser.service == "gfn" and window.get_visible()
             pads.actions = ["back"]  # Stop failure must not be dismissible to an empty screen.
         elif step == 4:
-            assert title == "Streaming browser did not close" and len(buttons) == 1
+            assert title == "Could not return to the Main Menu" and len(buttons) == 1
             assert window.get_visible()
             browser.fail_stop = False
             buttons[0].clicked()
@@ -397,6 +460,16 @@ def drive():
             if title != "MAIN MENU":
                 return True
             assert browser.service is None and window.get_visible()
+            buttons[2].clicked()
+        elif step == 9:
+            assert "SETTINGS" in titles
+            buttons[0].clicked()
+        elif step == 10:
+            assert "SYSTEM UPDATES" in titles
+            assert "Updates aren't available on this installation." in titles
+            press(window, Gdk.KEY_Escape)
+        elif step == 11:
+            assert "SETTINGS" in titles
             done = True
             Gtk.main_quit()
             return False

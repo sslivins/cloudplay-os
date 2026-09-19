@@ -82,13 +82,54 @@ class DiscoveryTests(unittest.TestCase):
         self.api_pages([[release()]])
         first = self.client.check("1.0.0")
         self.assertEqual(self.client.check("1.0.0"), first)
-        self.assertEqual(self.client.check("1.0.0", force=True), first)
         self.assertEqual(self.client._opener.open.call_count, 1)
         self.now += 21600
         self.client._opener.open = mock.Mock(return_value=Response(code=304))
         self.assertEqual(self.client.check("1.0.0"), first)
         request = self.client._opener.open.call_args.args[0]
         self.assertEqual(request.get_header("If-none-match"), '"page-0"')
+
+    def test_manual_check_finds_new_beta_without_waiting_for_cached_schedule(self):
+        self.api_pages([[]])
+        self.assertIsNone(self.client.check("1.0.0"))
+        self.api_pages([[release("1.1.0-beta.1", prerelease=True)]])
+        self.assertIsNone(self.client.check("1.0.0"))
+        self.client._opener.open.assert_not_called()
+        selected = self.client.check("1.0.0", force=True)
+        self.assertEqual(selected["version"], "1.1.0-beta.1")
+        self.client._opener.open.assert_called_once()
+        self.client._opener.open = mock.Mock(return_value=Response(code=304))
+        self.assertEqual(self.client.check("1.0.0", force=True), selected)
+        self.client._opener.open.assert_called_once()
+        request = self.client._opener.open.call_args.args[0]
+        self.assertEqual(request.get_header("If-none-match"), '"page-0"')
+
+    def test_manual_check_refreshes_persisted_cache_after_restart(self):
+        cache = self.work / "discovery.json"
+        self.client.cache_file = cache
+        self.api_pages([[]])
+        self.assertIsNone(self.client.check("1.0.0"))
+        second = d.Discovery(cache_file=cache, clock=lambda: self.now)
+        second._opener.open = mock.Mock(return_value=Response(
+            json.dumps([release()]).encode()))
+        self.assertEqual(second.check("1.0.0", force=True)["version"], "1.1.0")
+        second._opener.open.assert_called_once()
+
+    def test_manual_check_during_failure_backoff_does_not_report_stale_success(self):
+        self.api_pages([[]])
+        self.assertIsNone(self.client.check("1.0.0"))
+        self.client._opener.open = mock.Mock(side_effect=OSError("offline"))
+        with self.assertRaisesRegex(d.DiscoveryError, "NETWORK"):
+            self.client.check("1.0.0", force=True)
+        with self.assertRaisesRegex(d.DiscoveryError, "BACKOFF"):
+            self.client.check("1.0.0", force=True)
+        self.client._opener.open.assert_called_once()
+        self.assertEqual(self.client.last_successful_check, self.now)
+        self.now += 60
+        self.api_pages([[release()]])
+        self.assertEqual(self.client.check("1.0.0", force=True)["version"], "1.1.0")
+        self.assertEqual(self.client._failures, 0)
+        self.assertEqual(self.client.last_successful_check, self.now)
 
     def test_persistent_cache(self):
         cache = self.work / "discovery.json"

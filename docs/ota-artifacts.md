@@ -232,8 +232,11 @@ removes partial/completed files created by that call only.
 
 Checks retain per-page ETags and atomic cached results. Set `cache_file` in
 production to preserve scheduling across service restarts. Normal checks are
-six hours apart; explicit forced checks have a 30-minute minimum; failures
-back off from 60 seconds to six hours. The caller/timer adds randomized delay.
+six hours apart; explicit forced checks immediately revalidate with GitHub using
+per-page ETags instead of returning cached results without contacting the server.
+Failures back off from 60 seconds to six hours, including manual retries; a
+manual retry during backoff reports `BACKOFF`, never stale success.
+The caller/timer adds randomized delay.
 `last_successful_check` (Unix timestamp or None) and `next_check_at` expose
 staleness/scheduling. A failed refresh never makes partial pages look like a
 successful complete scan. API outages must be handled by the service as

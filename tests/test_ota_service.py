@@ -12,6 +12,20 @@ from updater.state import Config, UpdateError
 
 
 class ServiceTests(unittest.TestCase):
+    def test_worker_persists_command_for_expected_and_unexpected_errors(self):
+        for error in (UpdateError("NETWORK", "Offline"), RuntimeError("Unexpected")):
+            with self.subTest(error=error):
+                runtime = MagicMock(config=Config())
+                runtime.check.side_effect = error
+                service = Service(runtime)
+                service._worker_lock.acquire()
+                with self.assertLogs("cloudplay.updater", level="ERROR"):
+                    service._work("check")
+                saved = runtime.journal.update.call_args.kwargs["error"]
+                self.assertEqual(saved["command"], "check")
+                self.assertIn(str(error), saved["message"])
+                self.assertFalse(service._worker_lock.locked())
+
     def test_cleanup_readiness_is_hidden_until_worker_releases_lock(self):
         runtime = Mock(config=Config())
         runtime.status.side_effect = lambda: dict(
@@ -23,13 +37,14 @@ class ServiceTests(unittest.TestCase):
             status = service.dispatch("status", 450)
             self.assertEqual(status["phase"], "finishing")
             self.assertFalse(status["can_restart"])
+            self.assertFalse(status["channel_change_enabled"])
             self.assertEqual(status["operation"]["name"], "cleanup")
         finally:
             service._worker_lock.release()
         self.assertTrue(service.dispatch("status", 450)["can_restart"])
 
     def test_only_exact_fixed_commands(self):
-        for command in ("status", "check", "install", "cancel", "restart"):
+        for command in ("status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"):
             self.assertEqual(parse_request(json.dumps({"command": command})), command)
         for raw in ('{"command":"shell"}', '{"command":"install","url":"https://evil"}',
                     '{"command":"status","command":"install"}', '["status"]',
@@ -62,6 +77,13 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(UpdateError, "IPC_AUTH"):
             service.dispatch("status", 1000)
         runtime.status.assert_not_called()
+
+    def test_beta_preference_requires_trusted_identity(self):
+        service = Service(Mock(config=Config()))
+        for command in ("enable_beta", "disable_beta"):
+            with self.assertRaisesRegex(UpdateError, "IPC_AUTH"):
+                service.dispatch(command, 1000)
+        self.assertIsNone(service._worker)
 
     def test_status_works_while_hardware_gate_disabled(self):
         runtime = Mock(config=Config())

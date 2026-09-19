@@ -63,7 +63,7 @@ class Service:
     def status(self):
         status = self.runtime.status()
         if self._worker_lock.locked():
-            status.update(can_restart=False, install_enabled=False)
+            status.update(can_restart=False, install_enabled=False, channel_change_enabled=False)
             if status["phase"] == "ready_to_restart" and self._command == "install":
                 status.update(phase="finishing", progress=None,
                               operation=dict(name="cleanup"))
@@ -80,7 +80,8 @@ class Service:
             try:
                 with self.runtime.journal.operation(timeout=5):
                     self.runtime.journal.update(error=dict(
-                        code=getattr(exc, "code", "IO"), message=str(exc)[:2048]))
+                        code=getattr(exc, "code", "IO"), message=str(exc)[:2048],
+                        command=command))
             except ERRORS:
                 LOG.exception("Cannot persist updater failure")
         except Exception as exc:
@@ -89,7 +90,8 @@ class Service:
             try:
                 with self.runtime.journal.operation(timeout=5):
                     self.runtime.journal.update(error=dict(
-                        code="INTERNAL", message=f"{type(exc).__name__}: {exc}"[:2048]))
+                        code="INTERNAL", message=f"{type(exc).__name__}: {exc}"[:2048],
+                        command=command))
             except ERRORS:
                 LOG.exception("Cannot persist internal updater failure")
         finally:

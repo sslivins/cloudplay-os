@@ -52,7 +52,7 @@ def kill_session_processes(uid, text):
 
 
 def authorize(uid, command, config):
-    if command == "open" and uid in (0, config.browser_uid, config.launcher_uid):
+    if command in ("open", "open-beta") and uid in (0, config.browser_uid, config.launcher_uid):
         return
     if command == "close" and uid in (0, config.launcher_uid):
         return
@@ -108,7 +108,7 @@ class Portal:
             fail("BUSY", "A session transition is already running")
         switching = False
         try:
-            if command == "open" and self.active():
+            if command in ("open", "open-beta") and self.active():
                 return {"session": "updates"}
             with self.runtime.journal.operation(), provider_lease(self.config):
                 if command == "close":
@@ -119,6 +119,7 @@ class Portal:
                     self.terminate_identity(self.config.launcher_uid)
                     self.run(["systemctl", "stop", UNIT], timeout=20)
                     self.marker.unlink(missing_ok=True)
+                    self.marker.with_name("landing-page").unlink(missing_ok=True)
                     self.run(["systemctl", "start", "greetd.service"], timeout=30)
                     if self.run(["systemctl", "is-active", "greetd.service"],
                                 allowed=(0, 3)).stdout.strip() != "active":
@@ -130,6 +131,8 @@ class Portal:
                 switching = True
                 self.run(["systemctl", "stop", "greetd.service"], timeout=30)
                 self.terminate_identity(self.config.browser_uid)
+                atomic_write(self.marker.with_name("landing-page"),
+                             b"beta" if command == "open-beta" else b"updates", 0o644)
                 self.run(["systemctl", "start", UNIT], timeout=30)
                 return {"session": "updates"}
         except ERRORS:
@@ -143,7 +146,7 @@ class Portal:
 
 
 def request(command, *, path=SOCKET):
-    if command not in ("open", "close"):
+    if command not in ("open", "open-beta", "close"):
         fail("COMMAND", "Unsupported session transition")
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -201,7 +204,7 @@ def _serve(config):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(SOCKET))
         # Discovery/open is public local IPC; kernel peer UID authorizes each
-        # fixed action. Neither command can install, select URLs, or execute input.
+        # fixed action. No command can install, change channels, or execute input.
         SOCKET.chmod(0o666)
         listener.listen(4)
         listener.settimeout(1)

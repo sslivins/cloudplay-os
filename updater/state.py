@@ -222,6 +222,8 @@ class Journal:
                 fail("STATE", "journal schema mismatch; operator recovery required")
             if not isinstance(value["phase"], str) or value["phase"] not in PHASES:
                 fail("STATE", "invalid journal phase")
+            if "channel" in value and value["channel"] not in ("stable", "beta"):
+                fail("STATE", "invalid update channel")
             SemVer.parse(value["current_version"])
             SemVer.parse(value["highest_version"])
             if (value["last_good"] not in ("A", "B")

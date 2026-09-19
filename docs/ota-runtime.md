@@ -81,7 +81,7 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
 ### Trusted maintenance session
 
 The normal gaming seat (UID 1000, including network setup Chromium) reads only
-the root-owned public `status.json`. Its Updates page can request `open` on
+the root-owned public `status.json`. Its Settings and notification shortcuts can request `open` or `open-beta` on
 the separate maintenance broker; this is not an install authorization.
 The broker holds the provider interlock, stops greetd, terminates the gaming
 user's sessions/user manager, and refuses to start maintenance if any process
@@ -107,9 +107,9 @@ Main Menu; returning stops the private compositor before restoring greetd.
 Arrow keys select actions; Enter, keypad Enter, or Space activates the focused
 action. Install and restart confirmations initially select **Not Now**.
 
-The maintenance broker has only `open`/`close`. There are no caller-selected
+The maintenance broker has only `open`/`open-beta`/`close`. There are no caller-selected
 users, units, commands, paths, URLs or flags. Its public local socket checks
-kernel peer credentials before executing either fixed transition.
+kernel peer credentials before executing a fixed transition.
 Its root-owned socket directory is explicitly traversable (0755), including
 when candidate bootstrap creates it under umask 0077. The active marker and
 singleton-lock directory remain private.
@@ -167,6 +167,23 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
+An idle screen says "Check for updates" until a successful discovery check is
+recorded. With a successful check and no error, it says "Cloudplay OS is up to
+date." Failed checks say "Unable to check for updates." and retain their diagnostic
+code/details. Errors carry an optional `command` field so check failures are not
+mislabelled as installation failures; rollback and recovery messages retain priority.
+Brief action feedback names the action (for example, "Checking for updates..."),
+not the internal request. Every service reply refreshes the presentation, even if
+the status is unchanged, so completed checks cannot leave temporary feedback stuck.
+User-facing copy describes the task and next action, not partitions, permissions,
+signatures, session identities, or safety-gate internals. Failures show plain-language
+guidance and a bounded `Reference: CODE`; raw backend details remain in updater/client
+logs rather than appearing on the TV. Unknown codes get neutral help text, never
+an invented cause or a promise that retrying is safe. Release notes are labelled
+"What's new" and describe user-visible changes. An available release is labelled
+"Cloudplay OS VERSION is available"; the "Updating..." heading starts with the
+installation flow, not while merely browsing an offer.
+
 The native screen separates a fixed target-version header ("Updating Cloudplay OS
 to VERSION", without the currently installed version), a graphical five-stage
 timeline (Download, Prepare, Install, Check, Restart), and the current task.
@@ -220,16 +237,40 @@ preserving power-loss recovery. A failed restart restores the action and reports
 its error. An unavailable status connection hides progress rather than animating
 stale work. None of these UI states changes promotion or rollback deadlines.
 
-On the Main Menu, a labelled bell sits in the upper-right TV-safe margin. Game
-providers keep initial focus; Up reaches Updates and Down returns to the previous
-provider. No overlay is shown over a running game and updates never steal focus.
+The Main Menu always has a Settings shortcut in the upper-left TV-safe margin.
+Settings contains System Updates, including when no update notification exists.
+It also contains a Beta Releases panel showing On/Off and an explicit opt-in or
+opt-out action. The panel explains that beta releases may be less stable and that
+opting out never downgrades the installed system. It only changes future discovery
+and verification policy; installs still require confirmation.
+Preference changes use the fixed `enable_beta` / `disable_beta` commands from the
+isolated session, persist in the root-owned journal on `/data`, clear the previous
+channel's offer, and are blocked while an update/candidate or recovery is active.
+Existing installations without a journal preference retain their configured
+channel. The browser identity can only request navigation with `open-beta`, never
+change the channel. This uses the same isolation transition as System Updates.
+A labelled bell in the upper-right is visible only for an available update,
+update activity, restart readiness, or an undismissed failure/recovery notice.
+Both Settings -> System Updates and the bell enter the same isolated updater
+automatically, without an "Open Update Controls" step or session-switch warning.
+Installation and restart still require their existing confirmations; a failed
+session transition shows its error and a retry action, never privileged controls
+in the gaming session.
+
+Game providers keep initial focus. Up reaches the bell when visible, otherwise
+Settings; Left/Right moves between these shortcuts, and Down returns to the
+previous provider. Notifications appear without stealing focus; hiding a focused
+bell transfers focus to Settings. Back returns from Settings to the Main Menu.
+No overlay is shown over a running game.
 
 Wire request: one UTF-8 JSON line with exactly `{"command":"status"}` (or
-`check`, `install`, `cancel`, `restart`). Maximum request is 1024 bytes;
+`check`, `install`, `cancel`, `restart`, `enable_beta`, `disable_beta`). Maximum request is 1024 bytes;
 response is 65536 bytes. The daemon imposes a 3-second total request deadline,
 four simultaneous clients, one operation worker, and at least one second
-between state-changing requests from each authorized identity. Discovery adds
-its own 30-minute forced-check limit and persistent backoff.
+between state-changing requests from each authorized identity. Manual checks
+revalidate with GitHub immediately unless persistent failure backoff is active;
+backoff is reported as a check failure rather than a cached successful result.
+Automatic checks retain their six-hour schedule.
 
 The daemon authenticates the kernel's Linux `SO_PEERCRED`, not a UID claimed in
 JSON. Only root and `launcher_uid` are allowed. The socket directory is

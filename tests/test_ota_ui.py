@@ -3,6 +3,7 @@ from pathlib import Path
 import threading
 import time
 import unittest
+from unittest.mock import Mock
 
 spec = importlib.util.spec_from_file_location(
     "ota_ui", Path(__file__).resolve().parents[1] / "launcher/updates.py")
@@ -11,6 +12,129 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_errors_explain_next_steps_without_dumping_internal_details(self):
+        for code, expected in (("NETWORK", "internet connection"),
+                               ("SPACE", "free space"), ("SIGNATURE", "won't be installed"),
+                               ("BACKOFF", "wait a little"), ("BUSY", "Finish the current update"),
+                               ("HEALTH", "asking for help")):
+            with self.subTest(code=code):
+                error = dict(code=code, message="/dev/mmcblk0p5 UID 450 manifest_sha256 failed")
+                text = ui.summary(dict(phase="failed", error=error))
+                self.assertIn(expected, text)
+                self.assertIn("Reference: " + code, text)
+                self.assertNotIn(error["message"], text)
+        self.assertNotIn("untrusted\ntext", ui.error_detail(dict(code="untrusted\ntext")))
+        self.assertTrue(ui.summary(dict(phase="failed", error=dict(code="CANCELLED"))).startswith(
+            "Update cancelled."))
+
+    def test_phase_and_task_copy_does_not_expose_implementation_terms(self):
+        banned = ("ota", "a/b", "slot", "permissions", "package structure",
+                  "measured result", "safety gates", "compositor", "manifest")
+        samples = [ui.summary(dict(phase=phase)) for phase in (
+            *ui.BUSY, "idle", "available", "ready_to_restart", "promoted",
+            "rolled_back", "failed", "disabled", "uninitialized", "recovery_required")]
+        samples.append(ui.summary(dict(phase="idle", mutation_enabled=False)))
+        for name, (phases, _, measurable) in ui.OPERATIONS.items():
+            status = dict(phase=phases[0], operation=dict(
+                name=name, received=1 if measurable else None, total=2 if measurable else None,
+                quiet_seconds=20, elapsed=60))
+            samples.append(ui.summary(status))
+        for text in samples:
+            for term in banned:
+                with self.subTest(text=text, term=term):
+                    self.assertNotIn(term, text.lower())
+        self.assertNotIn("internal_phase_123", ui.summary(dict(phase="internal_phase_123")))
+
+    def test_available_update_is_not_presented_as_already_installing(self):
+        status = dict(phase="available", current_version="1.0.0", available_version="1.1.0",
+                      notes="Clearer update progress.")
+        self.assertEqual(ui.version_text(status), "Cloudplay OS 1.1.0 is available")
+        self.assertIn("What's new:\nClearer update progress.", ui.summary(status))
+        status["phase"] = "downloading"
+        self.assertEqual(ui.version_text(status), "Updating Cloudplay OS to 1.1.0")
+
+    def test_beta_navigation_requires_root_owned_fixed_page(self):
+        path = Mock()
+        path.lstat.return_value = Mock(st_mode=ui.stat.S_IFREG | 0o644, st_uid=0, st_size=4)
+        path.read_text.return_value = "beta"
+        self.assertEqual(ui.initial_page(path), "beta")
+        path.read_text.return_value = "enable_beta"
+        with self.assertRaisesRegex(ValueError, "Invalid"):
+            ui.initial_page(path)
+        path.lstat.return_value.st_uid = 1000
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            ui.initial_page(path)
+        path.lstat.side_effect = FileNotFoundError
+        self.assertEqual(ui.initial_page(path), "updates")
+
+    def test_action_feedback_describes_the_action(self):
+        self.assertEqual(ui.request_text("check"), "Checking for updates...")
+        self.assertEqual(ui.request_text("install"), "Starting your update...")
+        self.assertEqual(ui.request_text("dismiss"), "")
+        for command in ui.COMMANDS:
+            self.assertNotIn("request", ui.request_text(command).lower())
+
+    def test_unchanged_reply_clears_temporary_action_feedback(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.status = dict(phase="idle", last_successful_check=10)
+        for command in ("check", "status"):
+            with self.subTest(command=command):
+                client.pending, client.active_command = True, command
+                client.results.put((dict(client.status), ""))
+                self.assertTrue(client.poll())
+                self.assertFalse(client.pending)
+                self.assertIsNone(client.active_command)
+                self.assertFalse(client.poll())
+
+    def test_identical_error_reply_also_refreshes_the_screen(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.error = "Unavailable"
+        client.pending = True
+        client.results.put((None, "Unavailable"))
+        self.assertTrue(client.poll())
+        self.assertEqual(client.error, "Unavailable")
+        self.assertFalse(client.pending)
+
+    def test_idle_only_claims_up_to_date_after_successful_check(self):
+        self.assertEqual(ui.summary({"phase": "idle"}), "Check for updates")
+        for last_check in (None, True, -1, "10", float("nan"), float("inf")):
+            with self.subTest(last_check=last_check):
+                self.assertEqual(ui.summary(dict(phase="idle", last_successful_check=last_check)),
+                                 "Check for updates")
+        self.assertEqual(ui.summary(dict(phase="idle", last_successful_check=10)),
+                         "Cloudplay OS is up to date.")
+        self.assertNotIn("up to date", ui.summary(dict(
+            phase="idle", last_successful_check=10, error="Status unavailable")))
+
+    def test_check_failure_is_not_an_install_failure_or_current_success(self):
+        error = dict(command="check", code="NETWORK", message="Offline")
+        for phase in ("idle", "checking", "failed"):
+            text = ui.summary(dict(phase=phase, last_successful_check=10, error=error))
+            self.assertEqual(text, "Unable to check for updates.\n"
+                                  "Check your internet connection and try again.\nReference: NETWORK")
+        error["command"] = "install"
+        self.assertTrue(ui.summary(dict(phase="failed", error=error)).startswith(
+            "The update could not be completed."))
+        error["command"] = "check"
+        self.assertIn("back on your previous version", ui.summary(
+            dict(phase="rolled_back", error=error)))
+
+    def test_check_request_failure_has_friendly_summary_and_diagnostic(self):
+        def send(command):
+            raise OSError("Connection refused")
+        client = ui.Updates(send)
+        self.addCleanup(client.close)
+        self.assertTrue(client.submit("check"))
+        value, error = client.results.get(timeout=2)
+        self.assertIsNone(value)
+        self.assertTrue(error.startswith("Unable to check for updates."))
+        self.assertIn("Reference: UPDATE_ERROR", error)
+        self.assertNotIn("Connection refused", error)
+
     def test_mutations_require_explicit_service_permission(self):
         for phase, command, flag in (("available", "install", "install_enabled"),
                                      ("ready_to_restart", "restart", "can_restart")):
@@ -20,6 +144,13 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertIn(command, dict(ui.actions(
                 {"phase": phase, flag: True})).values())
 
+    def test_public_session_only_offers_transition_retry_not_privileged_actions(self):
+        status = dict(phase="available", requires_trusted_session=True, install_enabled=True)
+        self.assertEqual(ui.actions(status), [("Try Again", "open")])
+        self.assertEqual(ui.request_text("open"), "Opening System Updates...")
+        self.assertNotIn("browser", ui.summary(status))
+        self.assertNotIn("controls", ui.summary(status).lower())
+
     def test_no_cancel_after_partition_writes_begin(self):
         self.assertIn("cancel", dict(ui.actions({"phase": "downloading", "can_cancel": True})).values())
         for phase in ("staging", "installing", "activating", "tryboot_running",
@@ -27,10 +158,10 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertEqual(ui.actions({"phase": phase, "install_enabled": True}), [])
 
     def test_notices_and_progress_are_plain_bounded_text(self):
-        self.assertIn("previous system was restored", ui.summary({"phase": "rolled_back"}))
+        self.assertIn("back on your previous version", ui.summary({"phase": "rolled_back"}))
         self.assertIn("17%", ui.summary({"phase": "downloading", "progress": {"received": 17, "total": 100}}))
         self.assertLess(len(ui.summary({"phase": "failed", "error": "x" * 10000})), 500)
-        self.assertIn("restart ready", ui.badge({"phase": "ready_to_restart"}))
+        self.assertIn("ready to restart", ui.badge({"phase": "ready_to_restart"}))
         self.assertNotIn("locked", ui.summary({"phase": "idle", "install_enabled": False,
                                               "mutation_enabled": True}))
 
@@ -122,7 +253,7 @@ class UpdatePresentationTests(unittest.TestCase):
         status = dict(phase="staging_boot", progress=dict(received=100, total=100),
                       operation=dict(name="save_boot", elapsed=65))
         self.assertIsNone(ui.progress_fraction(status))
-        self.assertEqual(ui.progress_text(status), "Current task: 1:05 elapsed")
+        self.assertEqual(ui.progress_text(status), "Elapsed: 1:05")
         self.assertIn("Saving startup files", ui.summary(status))
         status["operation"]["name"] = "check_restart"
         self.assertIsNone(ui.progress_fraction(status))
@@ -157,7 +288,7 @@ class UpdatePresentationTests(unittest.TestCase):
 
     def test_cancellation_is_update_not_download_and_pending_is_explained(self):
         self.assertIn(("Cancel Update", "cancel"), ui.actions(dict(phase="verifying", can_cancel=True)))
-        self.assertIn("Cancellation requested", ui.summary(
+        self.assertIn("Cancelling your update", ui.summary(
             dict(phase="verifying", cancellation_requested=True)))
 
 
