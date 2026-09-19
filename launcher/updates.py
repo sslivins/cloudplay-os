@@ -73,11 +73,20 @@ def step_index(status):
 def journey(status):
     index = step_index(status)
     if index is None:
-        return ""
+        return ()
     complete = status.get("phase") == "promoted"
-    return "   >   ".join(
-        name + (" (done)" if position < index or complete else "")
+    return tuple(
+        (name, "done" if position < index or complete else
+         "active" if position == index else "upcoming")
         for position, name in enumerate(STEPS))
+
+
+def version_text(status):
+    current = str(status.get("current_version") or "")[:128]
+    target = str(status.get("candidate_version") or status.get("available_version") or "")[:128]
+    if current and target and current != target:
+        return f"Cloudplay OS  {current} \u2192 {target}"
+    return "Cloudplay OS" + ("  " + current if current else "")
 
 
 def request(command):
@@ -144,12 +153,7 @@ def progress_text(status):
             return f"Current task: {elapsed // 60}:{elapsed % 60:02d} elapsed"
         return "Waiting for an update from the system"
     received, total = counts
-    action = "downloaded" if status["phase"] == "downloading" else "copied"
-    sample = operation(status)
-    if sample:
-        action = OPERATIONS[sample["name"]][2]
-    return (f"{100 * received // total}% {action}"
-            f" ({received / 1024**2:.1f} / {total / 1024**2:.1f} MiB)")
+    return f"{100 * received // total}%"
 
 
 def progress_detail(status):
@@ -158,9 +162,8 @@ def progress_detail(status):
     sample = operation(status)
     if sample:
         text = OPERATIONS[sample["name"]][1]
-        if progress_counts(status) is None:
-            text += ". Keep power connected while this finishes."
-        elif type(sample.get("quiet_seconds")) is int and sample["quiet_seconds"] >= 15:
+        if (progress_counts(status) is not None
+                and type(sample.get("quiet_seconds")) is int and sample["quiet_seconds"] >= 15):
             text += ". Waiting for the next measured result."
         return text
     return {
@@ -179,8 +182,6 @@ def progress_detail(status):
 
 def summary(status, *, include_progress=True):
     phase = status.get("phase", "unknown")
-    version = status.get("current_version", "")
-    available = status.get("available_version")
     text = {
         "idle": "No update is waiting.",
         "available": "An update is available.",
@@ -207,19 +208,7 @@ def summary(status, *, include_progress=True):
         "recovery_required": "The update needs local recovery. Automatic restart is stopped.",
         "unknown": "Waiting for the update service...",
     }.get(phase, "Update status: " + str(phase))
-    index = step_index(status)
-    lines = [f"Step {index + 1} of 5 - {STEPS[index]}"] if index is not None and phase != "promoted" else []
-    if index is None or phase not in BUSY:
-        lines.append(text)
-    if version:
-        lines.append("Installed: " + str(version)[:128])
-    if available:
-        lines.append("Updating to: " + str(available)[:128] if index is not None
-                     else "Available: " + str(available)[:128])
-    if phase in BUSY:
-        lines.append(progress_detail(status))
-        if progress_counts(status) is not None:
-            lines.append("Keep power connected. This measures the current task, not the whole update.")
+    lines = [progress_detail(status) if phase in BUSY and phase != "checking" else text]
     if include_progress and progress_counts(status) is not None:
         lines.append(progress_text(status))
     error = status.get("error")

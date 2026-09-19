@@ -167,9 +167,16 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
-The native screen keeps five steps visible: Download, Prepare, Install, Check,
-Restart. Completed steps remain marked. Percentages describe only the named task,
-never an estimated fraction of the entire update. Only `promoted` is presented as
+The native screen separates a fixed version header, a graphical five-stage
+timeline (Download, Prepare, Install, Check, Restart), and the current task.
+Completed milestones have checkmarks, the active milestone has an accent and
+activity indicator, and upcoming milestones remain muted. Prepare includes
+package checks, unpacking and extracted-file checks. There are no text-arrow
+separators or "step N of 5" captions. Versions remain above the timeline instead
+of appearing inside task status. The thicker, rounded task bar shows only a
+percentage, without byte counts or explanatory progress disclaimers.
+Percentages describe only the named task, never an estimated fraction of the
+entire update. Only `promoted` is presented as
 "Update complete". Confirmations describe gaming availability and keeping power
 connected, not internal partitions or slots.
 
@@ -185,7 +192,10 @@ where applicable. Copy completion still follows file fsync/attribute work.
 
 Opaque operations (signature tool, formatting, profile preservation, flushing,
 configuration, unmount and cleanup) have explicit labels and elapsed task time,
-with **no bouncing progress bar or fabricated percentage/ETA**. Byte counters can
+with **no bouncing progress bar or fabricated percentage/ETA**. The active
+milestone animates during measurable and opaque work, but not while waiting for
+restart confirmation, after completion, or when the status connection fails.
+Byte counters can
 pause while per-file synchronization or metadata checks finish; after 15 seconds
 without a new measurement the UI explicitly says it is waiting for the next result.
 Elapsed/quiet times use the monotonic clock; responsiveness is not claimed to prove

@@ -131,6 +131,22 @@ def snapshot(window, name):
     surface.write_to_png(str(Path(directory) / (name + ".png")))
 
 
+def check_timeline(window, active, *, moving=True):
+    grid, = [w for w in children_of(window) if isinstance(w, Gtk.Grid)]
+    labels = ("Download", "Prepare", "Install", "Check", "Restart")
+    for index, name in enumerate(labels):
+        marker = grid.get_child_at(index * 2, 0)
+        label = grid.get_child_at(index * 2, 1)
+        state = "done" if index < active else "active" if index == active else "upcoming"
+        assert label.get_text() == name and label.get_style_context().has_class(state)
+        assert marker.get_accessible().get_name() == f"{name}: {state}"
+        spinner, = [w for w in marker.get_child().get_children() if isinstance(w, Gtk.Spinner)]
+        assert spinner.get_property("active") == (moving and index == active)
+    header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
+    assert header.get_allocation().y < grid.get_allocation().y
+    return grid, header
+
+
 def drive_trusted(window, buttons, titles):
     global done
     assert not browser.starts, "Trusted session started a browser"
@@ -172,10 +188,12 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 7:
         bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
-        assert bar.get_fraction() == 0.25 and "25% copied" in bar.get_text()
+        assert bar.get_fraction() == 0.25 and bar.get_text() == "25%"
         assert len(buttons) == 1 and window.get_focus() == buttons[0]
         snapshot(window, "update-copy-progress")
-        progress_widgets.update(bar=bar, button=buttons[0])
+        grid, header = check_timeline(window, 2)
+        progress_widgets.update(bar=bar, button=buttons[0], grid=grid, header=header,
+                                header_y=header.get_allocation().y)
         window.connect("unmap", lambda *_: progress_unmaps.append(True))
         updates.status["progress"]["received"] = 10 * 1024**2
         updates.changed = True
@@ -184,12 +202,16 @@ def drive_trusted(window, buttons, titles):
         assert bar is progress_widgets["bar"] and bar.get_fraction() == 0.5
         assert buttons[0] is progress_widgets["button"] and window.get_focus() == buttons[0]
         assert not progress_unmaps, "A progress refresh remapped the window"
+        grid, header = check_timeline(window, 2)
+        assert grid is progress_widgets["grid"] and header is progress_widgets["header"]
+        assert header.get_allocation().y == progress_widgets["header_y"]
         updates.status.update(phase="verifying_slot", progress=None)
         updates.changed = True
     elif step == 9:
         bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar is progress_widgets["bar"] and not bar.get_visible()
         assert any("Checking installed files" in text for text in titles)
+        check_timeline(window, 3)
         original_pulse = bar.pulse
         def pulse():
             progress_pulses.append(True)
@@ -203,7 +225,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 11:
         bar = progress_widgets["bar"]
         assert bar.get_visible() and bar.get_fraction() == 0.3
-        assert "30% checked" in bar.get_text()
+        assert bar.get_text() == "30%"
         assert window.get_focus() == progress_widgets["button"]
         snapshot(window, "update-file-check")
         updates.status["operation"] = dict(name="save_system", elapsed=65)
@@ -212,6 +234,7 @@ def drive_trusted(window, buttons, titles):
         assert not progress_widgets["bar"].get_visible()
         assert "Current task: 1:05 elapsed" in titles
         assert any("Saving system files" in text for text in titles)
+        check_timeline(window, 3)
         snapshot(window, "update-storage-wait")
         assert not progress_unmaps, "Operation changes remapped the update screen"
         updates.error = "Update status connection unavailable"
@@ -219,11 +242,31 @@ def drive_trusted(window, buttons, titles):
     elif step == 13:
         assert not any(isinstance(w, Gtk.ProgressBar) for w in children_of(window))
         assert updates.error in titles
+        check_timeline(window, 3, moving=False)
         updates.error = ""
         updates.status.update(phase="promoted", provider_launch_allowed=True)
         updates.changed = True
     elif step == 14:
         assert len(buttons) == 2
+        check_timeline(window, 5, moving=False)
+        snapshot(window, "update-complete")
+        updates.status.update(phase="verifying", provider_launch_allowed=False,
+                              operation=dict(name="unpack", received=45, total=100))
+        updates.changed = True
+    elif step == 15:
+        check_timeline(window, 1)
+        assert "Unpacking update files" in titles
+        bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
+        assert bar.get_text() == "45%"
+        snapshot(window, "update-unpacking")
+        updates.status.update(phase="ready_to_restart", can_restart=True, operation=None)
+        updates.changed = True
+    elif step == 16:
+        check_timeline(window, 4, moving=False)
+        snapshot(window, "update-ready")
+        updates.status.update(phase="promoted", can_restart=False, provider_launch_allowed=True)
+        updates.changed = True
+    elif step == 17:
         for name in ("launcher", "compositor"):
             path = Path(os.environ["XDG_RUNTIME_DIR"]) / (name + "-heartbeat.json")
             assert path.is_file(), "Missing real Wayland/GTK heartbeat: " + name
