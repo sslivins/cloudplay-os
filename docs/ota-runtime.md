@@ -167,12 +167,13 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
-The native screen separates a fixed version header, a graphical five-stage
+The native screen separates a fixed target-version header ("Updating Cloudplay OS
+to VERSION", without the currently installed version), a graphical five-stage
 timeline (Download, Prepare, Install, Check, Restart), and the current task.
 Completed milestones have checkmarks, the active milestone has an accent and
 activity indicator, and upcoming milestones remain muted. Prepare includes
 package checks, unpacking and extracted-file checks. There are no text-arrow
-separators or "step N of 5" captions. Versions remain above the timeline instead
+separators or "step N of 5" captions. The target remains above the timeline instead
 of appearing inside task status. The thicker, rounded task bar shows only a
 percentage, without byte counts or explanatory progress disclaimers.
 Percentages describe only the named task, never an estimated fraction of the
