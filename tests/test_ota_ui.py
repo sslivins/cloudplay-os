@@ -144,13 +144,16 @@ class UpdatePresentationTests(unittest.TestCase):
         status = dict(phase="verifying", current_version="0.1.0-beta.6",
                       available_version="0.1.0-beta.7",
                       operation=dict(name="unpack", received=25, total=100))
-        self.assertEqual(ui.version_text(status), "Cloudplay OS  0.1.0-beta.6 \u2192 0.1.0-beta.7")
+        self.assertEqual(ui.version_text(status), "Updating Cloudplay OS to 0.1.0-beta.7")
+        self.assertNotIn("0.1.0-beta.6", ui.version_text(status))
         self.assertEqual(ui.summary(status, include_progress=False), "Unpacking update files")
         status.update(candidate_version="0.1.0-beta.8")
         self.assertTrue(ui.version_text(status).endswith("0.1.0-beta.8"))
         self.assertEqual(ui.version_text(dict(current_version="0.1.0-beta.7")),
-                         "Cloudplay OS  0.1.0-beta.7")
+                         "Cloudplay OS")
         self.assertEqual(ui.version_text({}), "Cloudplay OS")
+        self.assertEqual(ui.version_text(dict(available_version="0.1.0-beta.7")),
+                         "Updating Cloudplay OS to 0.1.0-beta.7")
 
     def test_cancellation_is_update_not_download_and_pending_is_explained(self):
         self.assertIn(("Cancel Update", "cancel"), ui.actions(dict(phase="verifying", can_cancel=True)))

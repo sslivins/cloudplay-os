@@ -84,9 +84,9 @@ def journey(status):
 def version_text(status):
     current = str(status.get("current_version") or "")[:128]
     target = str(status.get("candidate_version") or status.get("available_version") or "")[:128]
-    if current and target and current != target:
-        return f"Cloudplay OS  {current} \u2192 {target}"
-    return "Cloudplay OS" + ("  " + current if current else "")
+    if target and current != target:
+        return f"Updating Cloudplay OS to {target}"
+    return "Cloudplay OS"
 
 
 def request(command):
