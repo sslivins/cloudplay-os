@@ -12,6 +12,22 @@ from updater.state import Config, UpdateError
 
 
 class ServiceTests(unittest.TestCase):
+    def test_cleanup_readiness_is_hidden_until_worker_releases_lock(self):
+        runtime = Mock(config=Config())
+        runtime.status.side_effect = lambda: dict(
+            phase="ready_to_restart", can_restart=True, install_enabled=False)
+        service = Service(runtime)
+        service._command = "install"
+        service._worker_lock.acquire()
+        try:
+            status = service.dispatch("status", 450)
+            self.assertEqual(status["phase"], "finishing")
+            self.assertFalse(status["can_restart"])
+            self.assertEqual(status["operation"]["name"], "cleanup")
+        finally:
+            service._worker_lock.release()
+        self.assertTrue(service.dispatch("status", 450)["can_restart"])
+
     def test_only_exact_fixed_commands(self):
         for command in ("status", "check", "install", "cancel", "restart"):
             self.assertEqual(parse_request(json.dumps({"command": command})), command)

@@ -339,7 +339,11 @@ class PlatformTests(unittest.TestCase):
             meta = {"manifest": {"root": directory, "boot": directory}}
             (boot / "cmdline.txt").write_bytes(b"root=PARTUUID=abc\n")
             generated = {"boot/cmdline.txt": file_record(b"root=PARTUUID=abc\n")}
-            verify_slot(root, boot, meta, generated)
+            samples = []
+            verify_slot(root, boot, meta, generated,
+                        activity=lambda *event: samples.append(event), operation="check_restart")
+            size = len(b"root=PARTUUID=abc\n")
+            self.assertEqual(samples, [("check_restart", 0, size), ("check_restart", size, size)])
             (boot / "surprise").write_bytes(b"x")
             with self.assertRaisesRegex(UpdateError, "SLOT_VERIFY"):
                 verify_slot(root, boot, meta, generated)

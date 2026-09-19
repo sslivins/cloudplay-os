@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native Wayland Home and host-owned leave confirmation; no web control API."""
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
-from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -59,16 +60,25 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     gi.require_version("GdkPixbuf", "2.0")
     from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
+    display = Gdk.Display.get_default()
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    geometry = monitor.get_geometry()
+    scale = min(1.0, geometry.width / 1920, geometry.height / 1080)
+    def pixels(value):
+        return max(1, round(value * scale))
+
     window = Gtk.Window(title="Cloudplay Home")
     window.set_wmclass("cloudplay-home", "Cloudplay Home")
     window.fullscreen()
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=pixels(18))
     box.set_halign(Gtk.Align.CENTER)
     box.set_valign(Gtk.Align.CENTER)
-    box.set_border_width(56)
-    window.add(box)
+    box.set_border_width(pixels(56))
+    overlay = Gtk.Overlay()
+    overlay.add(box)
+    window.add(overlay)
     css = Gtk.CssProvider()
-    css.load_from_data(b"""
+    stylesheet = """
         window {
             background: #050910;
             color: #eef7ff;
@@ -85,12 +95,16 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         }
         label.status {
             color: #b9d3df;
-            font-size: 18px;
+            font-size: 22px;
             margin-bottom: 8px;
         }
         progressbar {
             color: #b9d3df;
-            font-size: 18px;
+            font-size: 22px;
+        }
+        label.update-journey {
+            color: #b9d3df;
+            font-size: 20px;
         }
         progressbar trough {
             min-height: 12px;
@@ -157,6 +171,10 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         button.main-menu {
             border-color: #3b7582;
         }
+        button.updates-shortcut {
+            font-size: 22px;
+            padding: 10px 18px;
+        }
         box.return-help {
             margin-top: 18px;
             padding: 7px;
@@ -169,7 +187,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             color: #adc4d1;
             font-size: 17px;
         }
-    """)
+    """
+    css.load_from_data(re.sub(r"(\d+)px", lambda match: str(pixels(int(match[1]))) + "px",
+                             stylesheet).encode("ascii"))
     Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     buttons = []
@@ -183,6 +203,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     update_message = None
     update_progress = None
     update_choices = None
+    update_journey = None
+    update_activity_text = None
+    home_focus = 0
 
     def style(widget, *names):
         context = widget.get_style_context()
@@ -190,22 +213,22 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             context.add_class(name)
         return widget
 
-    def add_brand():
+    def add_brand(compact=False):
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-            str(LOGO), 520, 220, True)
+            str(LOGO), pixels(380 if compact else 520), pixels(160 if compact else 220), True)
         box.pack_start(style(Gtk.Image.new_from_pixbuf(pixbuf), "brand-logo"),
                        False, False, 0)
 
     def service_button(service, action):
         name = SERVICES[service][0]
         button = style(Gtk.Button(), "service-card", service + "-card")
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=pixels(24))
         logo_frame = style(Gtk.Box(), "service-logo-frame")
-        logo_frame.set_size_request(190, 60)
+        logo_frame.set_size_request(pixels(190), pixels(60))
         logo_frame.set_halign(Gtk.Align.CENTER)
         logo_frame.set_valign(Gtk.Align.CENTER)
         logo = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-            str(SERVICE_LOGOS[service]), 180, 56, True)
+            str(SERVICE_LOGOS[service]), pixels(180), pixels(56), True)
         logo_frame.pack_start(style(Gtk.Image.new_from_pixbuf(logo), "service-logo"),
                               False, False, 0)
         row.pack_start(logo_frame, False, False, 0)
@@ -228,7 +251,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         button = style(Gtk.Button(), "action")
         if main_menu:
             style(button, "main-menu")
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=pixels(16))
         if icon:
             row.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR),
                            False, False, 0)
@@ -245,40 +268,51 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                  "Press Ctrl + Alt + Home to return to this menu"),
                 ("controller",
                  "Hold Select/Back + Start/Menu for two seconds to return to this menu")):
-            row = style(Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14),
+            row = style(Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=pixels(14)),
                         "return-help")
             row.set_halign(Gtk.Align.CENTER)
             pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                str(RETURN_ICONS[icon]), 80, 50, True)
+                str(RETURN_ICONS[icon]), pixels(80), pixels(50), True)
             row.pack_start(style(Gtk.Image.new_from_pixbuf(pixbuf), "return-icon"),
                            False, False, 0)
             row.pack_start(style(Gtk.Label(label=text), "return-text"), False, False, 0)
             box.pack_start(row, False, False, 0)
 
-    def show(title, choices, note="", services=False, return_help=False, activity=False):
+    def show(title, choices, note="", services=False, return_help=False, activity=False,
+             journey_text=""):
         nonlocal updates_screen, update_confirmation, update_notice
         nonlocal update_message, update_progress, update_choices
+        nonlocal update_journey, update_activity_text
         updates_screen = False
         update_confirmation = title == "CONFIRM UPDATE"
+        if update_notice is not None:
+            overlay.remove(update_notice)
+            update_notice.destroy()
         update_notice = None
         update_message = update_progress = update_choices = None
+        update_journey = update_activity_text = None
         for child in box.get_children():
             box.remove(child)
             child.destroy()
         buttons.clear()
-        add_brand()
+        add_brand(compact=title == "SYSTEM UPDATES")
         box.pack_start(style(Gtk.Label(label=title), "page-title"), False, False, 0)
+        if journey_text:
+            update_journey = style(Gtk.Label(label=journey_text), "update-journey")
+            box.pack_start(update_journey, False, False, 0)
         if note:
             status = style(Gtk.Label(label=note), "status")
             status.set_line_wrap(True)
-            status.set_max_width_chars(72)
+            status.set_max_width_chars(68)
             status.set_justify(Gtk.Justification.CENTER)
             box.pack_start(status, False, False, 0)
             update_message = status
         if activity:
+            update_activity_text = style(Gtk.Label(), "status")
+            box.pack_start(update_activity_text, False, False, 0)
             update_progress = Gtk.ProgressBar()
             update_progress.set_show_text(True)
-            update_progress.set_pulse_step(0.025)
+            update_progress.set_no_show_all(True)
             box.pack_start(update_progress, False, False, 0)
         for choice in choices:
             if services:
@@ -292,10 +326,17 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if return_help:
             add_return_help()
         if services and updates is not None:
-            update_notice = Gtk.Button(label=update_badge(updates.status))
+            update_notice = style(Gtk.Button(label=update_badge(updates.status)), "updates-shortcut")
+            bell = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(LOGO.with_name("updates-bell.svg")), pixels(28), pixels(28), True)
+            update_notice.set_image(Gtk.Image.new_from_pixbuf(bell))
+            update_notice.set_always_show_image(True)
             update_notice.set_halign(Gtk.Align.END)
+            update_notice.set_valign(Gtk.Align.START)
+            update_notice.set_margin_top(pixels(40))
+            update_notice.set_margin_end(pixels(56))
             update_notice.connect("clicked", lambda _: show_updates())
-            box.pack_start(update_notice, False, False, 0)
+            overlay.add_overlay(update_notice)
             buttons.append(update_notice)
         # Remapping creates a newly focused native view, even over a fullscreen
         # service/error page. Never rely on JavaScript or focus inside Chromium.
@@ -303,7 +344,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         window.show_all()
         window.fullscreen()
         window.present()
-        buttons[0].grab_focus()
+        buttons[home_focus if services else 0].grab_focus()
 
     def show_updates(note=""):
         nonlocal updates_screen, update_choices
@@ -323,27 +364,40 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
         message = note or updates.error or update_summary(updates.status, include_progress=False)
         activity = updates.status.get("phase") in UPDATE_BUSY and not updates.error
-        choice_key = (tuple(choice[0] for choice in choices), activity)
+        journey_text = journey(updates.status)
+        choice_key = (tuple(choice[0] for choice in choices), activity, bool(journey_text))
         if not updates_screen or choice_key != update_choices:
-            show("SYSTEM UPDATES", choices, message, activity=activity)
+            focus = window.get_focus()
+            old_action = (update_choices[0][buttons.index(focus)]
+                          if updates_screen and update_choices and focus in buttons else None)
+            show("SYSTEM UPDATES", choices, message, activity=activity, journey_text=journey_text)
             updates_screen = True
             update_choices = choice_key
+            if old_action in choice_key[0]:
+                buttons[choice_key[0].index(old_action)].grab_focus()
         else:
             update_message.set_text(message)
+        if update_journey is not None:
+            update_journey.set_text(journey_text)
         if update_progress is not None:
             fraction = progress_fraction(updates.status)
+            update_progress.set_visible(fraction is not None)
             if fraction is not None:
                 update_progress.set_fraction(fraction)
             update_progress.set_text(progress_text(updates.status))
+            update_activity_text.set_text("" if fraction is not None else progress_text(updates.status))
 
     def update_action(command):
         if updates is None or browser.service:
             return
         if command in ("install", "restart"):
             label = "Install Update" if command == "install" else "Restart to Update"
-            note = ("The inactive system slot will be replaced. Keep the power connected."
+            note = ("Gaming will be unavailable while Cloudplay installs and checks your update.\n"
+                    "This can take several minutes. Keep power connected.\n"
+                    "We'll ask you to restart when it's ready."
                     if command == "install" else
-                    "Cloudplay OS will restart now and check the updated system.")
+                    "Cloudplay will check the files again before restarting.\n"
+                    "It will then check the updated system. Keep power connected.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
                   (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
@@ -418,6 +472,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
               (home_label, home, "go-home-symbolic", True)])
 
     def navigate(action):
+        nonlocal home_focus
         if action == "home":
             ask_home()
             return
@@ -436,6 +491,14 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         elif action in ("up", "left", "down", "right"):
             focus = window.get_focus()
             index = buttons.index(focus) if focus in buttons else 0
+            if update_notice is not None:
+                if action == "up" and focus is not update_notice:
+                    home_focus = min(index, len(SERVICES) - 1)
+                    update_notice.grab_focus()
+                    return
+                if action == "down" and focus is update_notice:
+                    buttons[home_focus].grab_focus()
+                    return
             buttons[(index + (-1 if action in ("up", "left") else 1)) % len(buttons)].grab_focus()
 
     def key(_, event):
@@ -465,13 +528,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             ask_home()
         if updates is not None and updates.poll():
             if updates_screen and not browser.service:
-                old_index = buttons.index(window.get_focus()) if window.get_focus() in buttons else 0
                 show_updates()
-                buttons[min(old_index, len(buttons) - 1)].grab_focus()
             elif update_notice is not None:
                 update_notice.set_label(update_badge(updates.status))
-        if update_progress is not None and progress_fraction(updates.status) is None:
-            update_progress.pulse()
         for action in pads.poll(window.get_visible()):
             navigate(action)
         return True

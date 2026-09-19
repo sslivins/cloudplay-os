@@ -114,11 +114,13 @@ def canonical_json(value) -> bytes:
                       ensure_ascii=True, allow_nan=False).encode("utf-8")
 
 
-def sha256_file(path: Path) -> str:
+def sha256_file(path: Path, *, progress=None) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
+            if progress:
+                progress(len(chunk))
     return digest.hexdigest()
 
 
@@ -354,7 +356,9 @@ def _verify_signature(message: Path, signature: Path, key: Path) -> bool:
     return result.returncode == 0
 
 
-def _trust(bundle, signature, keys_dir, minimum_key_epoch):
+def _trust(bundle, signature, keys_dir, minimum_key_epoch, *, activity=None):
+    if activity:
+        activity("authenticate")
     size = _regular(bundle, MAX_COMPRESSED)
     _regular(signature, MAX_SIGNATURE)
     catalog_path = bundle.with_name(bundle.name + ".catalog.json")
@@ -383,14 +387,25 @@ def _trust(bundle, signature, keys_dir, minimum_key_epoch):
             or catalog["compressed_size"] != size
             or not _integer(catalog["uncompressed_size"], 1024, MAX_EXPANDED)
             or not _integer(catalog["required_staging_bytes"], 1, 4 * MAX_EXPANDED)
-            or catalog["required_staging_bytes"] < catalog["uncompressed_size"] * 2 + size
-            or catalog["sha256"] != sha256_file(bundle)):
+            or catalog["required_staging_bytes"] < catalog["uncompressed_size"] * 2 + size):
+        _fail("CATALOG", "signed catalog does not bind this compressed artifact")
+    checked = 0
+    def report(count):
+        nonlocal checked
+        checked += count
+        if activity:
+            activity("check_package", checked, size)
+    if activity:
+        activity("check_package", 0, size)
+    if catalog["sha256"] != sha256_file(bundle, progress=report):
         _fail("CATALOG", "signed catalog does not bind this compressed artifact")
     return catalog
 
 
-def _decompress(bundle: Path, archive: Path, *, maximum=None):
+def _decompress(bundle: Path, archive: Path, *, maximum=None, activity=None):
     maximum = MAX_EXPANDED if maximum is None else min(maximum, MAX_EXPANDED)
+    if activity:
+        activity("unpack", 0, maximum)
     try:
         with archive.open("xb") as output:
             process = subprocess.Popen(
@@ -410,8 +425,12 @@ def _decompress(bundle: Path, archive: Path, *, maximum=None):
                     if total > maximum:
                         _fail("LIMIT", "decompressed archive exceeds limit")
                     output.write(chunk)
+                    if activity:
+                        activity("unpack", total, maximum)
                 if process.wait() != 0:
                     _fail("DECOMPRESS", "zstd rejected stream or resource limit")
+                if activity:
+                    activity("save_archive")
                 output.flush()
                 os.fsync(output.fileno())
             finally:
@@ -424,9 +443,11 @@ def _decompress(bundle: Path, archive: Path, *, maximum=None):
         _fail("DECOMPRESS", f"zstd unavailable or staging IO failure: {exc}")
 
 
-def _scan_tar(archive: Path):
+def _scan_tar(archive: Path, *, activity=None):
     """Bound extension headers before tarfile can allocate for them."""
     size = archive.stat().st_size
+    if activity:
+        activity("archive_layout", 0, size)
     count = 0
     extensions = 0
     with archive.open("rb") as source:
@@ -439,6 +460,10 @@ def _scan_tar(archive: Path):
                 for chunk in iter(lambda: source.read(1024 * 1024), b""):
                     if chunk.strip(b"\0"):
                         _fail("ARCHIVE", "nonzero trailing archive data")
+                    if activity:
+                        activity("archive_layout", source.tell(), size)
+                if activity:
+                    activity("archive_layout", size, size)
                 return
             try:
                 info = tarfile.TarInfo.frombuf(header, "utf-8", "strict")
@@ -465,6 +490,8 @@ def _scan_tar(archive: Path):
                 source.seek(((info.size + 511) // 512) * 512, 1)
             if source.tell() > size:
                 _fail("ARCHIVE", "member extends past archive")
+            if activity:
+                activity("archive_layout", source.tell(), size)
     _fail("ARCHIVE", "missing tar end marker")
 
 
@@ -511,8 +538,8 @@ def verify_attributes(path: Path, record: dict):
         _fail("ATTRIBUTES", "extended attribute mismatch")
 
 
-def _extract_archive(archive: Path, destination: Path, constraints: dict) -> dict:
-    _scan_tar(archive)
+def _extract_archive(archive: Path, destination: Path, constraints: dict, *, activity=None) -> dict:
+    _scan_tar(archive, activity=activity)
     with tarfile.open(archive, mode="r:", encoding="utf-8", errors="strict") as tar:
         first = tar.next()
         if (first is None or first.name != "meta.json" or not first.isreg()
@@ -523,6 +550,10 @@ def _extract_archive(archive: Path, destination: Path, constraints: dict) -> dic
         validate_metadata(meta, **constraints)
         seen = set()
         manifest = meta["manifest"]
+        total = sum(record["size"] for record in manifest.values() if record["type"] == "file")
+        received = 0
+        if activity:
+            activity("extract", received, total)
         links, directories = [], []
         for info in tar:
             if info is first:
@@ -558,11 +589,16 @@ def _extract_archive(archive: Path, destination: Path, constraints: dict) -> dic
                         digest.update(chunk)
                         output.write(chunk)
                         remaining -= len(chunk)
+                        received += len(chunk)
+                        if activity:
+                            activity("extract", received, total)
                 if digest.hexdigest() != expected["sha256"]:
                     _fail("MANIFEST", "file hash mismatch")
                 _set_attributes(target, expected)
         if seen != set(manifest):
             _fail("MANIFEST", "missing signed members")
+        if activity:
+            activity("file_attributes")
         for target, record in links:
             os.symlink(record["target"], target)
             _set_attributes(target, record)
@@ -588,7 +624,7 @@ def _private_directory(destination: Path):
 
 def verify_bundle(bundle: Path, signature: Path, keys_dir: Path, destination: Path, *,
                   platform: str, channel: str, current_version: str, highest_version: str,
-                  minimum_key_epoch: int, data_schema: int) -> dict:
+                  minimum_key_epoch: int, data_schema: int, activity=None) -> dict:
     """Verify both signatures before decompression, then extract a private tree.
 
     On failure destination may contain partial, UNTRUSTED data; the caller must
@@ -598,7 +634,7 @@ def verify_bundle(bundle: Path, signature: Path, keys_dir: Path, destination: Pa
     if not _integer(minimum_key_epoch, 1):
         _fail("KEY_EPOCH", "invalid trusted epoch floor")
     destination = _private_directory(Path(destination))
-    catalog = _trust(bundle, signature, keys_dir, minimum_key_epoch)
+    catalog = _trust(bundle, signature, keys_dir, minimum_key_epoch, activity=activity)
     if shutil.disk_usage(destination).free < catalog["required_staging_bytes"]:
         _fail("SPACE", "insufficient private staging space")
     archive = destination / ".verified-archive.tar"
@@ -606,10 +642,10 @@ def verify_bundle(bundle: Path, signature: Path, keys_dir: Path, destination: Pa
                        highest_version=highest_version, minimum_key_epoch=minimum_key_epoch,
                        data_schema=data_schema)
     try:
-        _decompress(bundle, archive, maximum=catalog["uncompressed_size"])
+        _decompress(bundle, archive, maximum=catalog["uncompressed_size"], activity=activity)
         if archive.stat().st_size != catalog["uncompressed_size"]:
             _fail("LIMIT", "uncompressed size mismatch")
-        meta = _extract_archive(archive, destination, constraints)
+        meta = _extract_archive(archive, destination, constraints, activity=activity)
         for key in ("version", "source_commit", "platform", "channel", "key_epoch"):
             if meta[key] != catalog[key]:
                 _fail("CATALOG", "inner and outer identity mismatch")
@@ -617,11 +653,12 @@ def verify_bundle(bundle: Path, signature: Path, keys_dir: Path, destination: Pa
         _fail("ARCHIVE", f"cannot extract artifact: {exc}")
     finally:
         archive.unlink(missing_ok=True)
-    verify_tree(destination, meta)
+    verify_tree(destination, meta, activity=activity)
     return meta
 
 
-def verify_tree(destination: Path, metadata: dict) -> None:
+def verify_tree(destination: Path, metadata: dict, *, activity=None,
+                operation="check_prepared") -> None:
     """Rehash a staging tree without following links; no exemptions are skipped."""
     destination = Path(destination)
     if destination.is_symlink() or not destination.is_dir():
@@ -629,6 +666,15 @@ def verify_tree(destination: Path, metadata: dict) -> None:
     manifest = metadata.get("manifest")
     if not isinstance(manifest, dict) or hashlib.sha256(canonical_json(manifest)).hexdigest() != metadata.get("manifest_sha256"):
         _fail("MANIFEST", "invalid verification manifest")
+    total = sum(record["size"] for record in manifest.values() if record["type"] == "file")
+    checked = 0
+    def report(count):
+        nonlocal checked
+        checked += count
+        if activity:
+            activity(operation, checked, total)
+    if activity:
+        activity(operation, 0, total)
     seen = set()
     pending = [destination]
     while pending:
@@ -651,7 +697,7 @@ def verify_tree(destination: Path, metadata: dict) -> None:
                 pending.append(path)
             elif kind == "file":
                 if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-                        or info.st_size != record["size"] or sha256_file(path) != record["sha256"]):
+                        or info.st_size != record["size"] or sha256_file(path, progress=report) != record["sha256"]):
                     _fail("MANIFEST", "file mismatch")
             else:
                 _fail("MANIFEST", "unsupported staging member")

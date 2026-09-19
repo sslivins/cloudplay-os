@@ -168,12 +168,22 @@ def copy_payload(source: Path, target: Path, metadata: dict, prefix: str,
 
 
 def verify_slot(root: Path, boot: Path, metadata: dict, generated: dict,
-                withheld=frozenset()):
+                withheld=frozenset(), *, activity=None, operation="check_installed"):
     """Closed exemptions are exact expected bytes+metadata, never wildcard skips."""
     if not set(generated) <= GENERATED_PATHS:
         fail("GENERATED", "unknown generated-file exemption")
     expected = dict(metadata["manifest"])
     expected.update(generated)
+    total = sum(record["size"] for name, record in expected.items()
+                if name not in withheld and record["type"] == "file")
+    checked = 0
+    def report(count):
+        nonlocal checked
+        checked += count
+        if activity:
+            activity(operation, checked, total)
+    if activity:
+        activity(operation, 0, total)
     seen = set()
     for prefix, base in (("root", root), ("boot", boot)):
         pending = [(prefix, base)]
@@ -192,7 +202,7 @@ def verify_slot(root: Path, boot: Path, metadata: dict, generated: dict,
                     fail("SLOT_VERIFY", f"link mismatch: {name}")
             elif kind == "file" and stat.S_ISREG(info.st_mode):
                 if (info.st_nlink != 1 or info.st_size != record["size"]
-                        or sha256_file(path) != record["sha256"]):
+                        or sha256_file(path, progress=report) != record["sha256"]):
                     fail("SLOT_VERIFY", f"content mismatch: {name}")
             else:
                 fail("SLOT_VERIFY", f"type mismatch: {name}")
@@ -508,13 +518,14 @@ class LinuxPlatform:
         os.rename(temporary, target)
         sync_directory(base)
 
-    def stage(self, source: Path, metadata: dict, layout: Layout, checkpoint, *, progress=None):
+    def stage(self, source: Path, metadata: dict, layout: Layout, checkpoint, *,
+              progress=None, activity=None):
         """Write only verified inactive partitions; config.txt is the final gate."""
         self.config.mutation_gate()
         if self.inspect() != layout:
             fail("LAYOUT_CHANGED", "mounted disk changed after prechecks")
         self.provider_idle()
-        verify_tree(source, metadata)
+        verify_tree(source, metadata, activity=activity, operation="check_source")
         for name, record in metadata["manifest"].items():
             if name == "boot" or name.startswith("boot/"):
                 if (record["type"] == "symlink" or record["uid"] != 0 or record["gid"] != 0
@@ -527,6 +538,8 @@ class LinuxPlatform:
             fail("BOOT_CONFIG", "alternate tryboot.txt unsupported; remove from bundle")
         render_cmdline(source / "root", metadata, layout.part(ROOT[layout.target]).uuid)
         checkpoint("invalidating", None)
+        if activity:
+            activity("prepare_storage")
         target_boot, target_root = layout.part(BOOT[layout.target]), layout.part(ROOT[layout.target])
         # Removing both entrypoints is mandatory before ANY target-root mutation.
         with self.mounted(target_boot, "boot") as boot:
@@ -535,16 +548,24 @@ class LinuxPlatform:
             self.flush(boot)
             if any((boot / name).exists() for name in ("config.txt", "tryboot.txt")):
                 fail("BOOT_GATE", "inactive boot entrypoint remains present")
+        if activity:
+            activity("preserve_profiles")
         self.snapshot_profiles(layout)
         checkpoint("staging_boot", None)
+        if activity:
+            activity("prepare_storage")
         self.unmounted(target_boot)
         self.mutate(["mkfs.vfat", "-F", "32", "-n", f"CP-BOOT-{layout.target}", target_boot.node], timeout=120)
         with self.mounted(target_boot, "boot") as boot:
             copy_payload(source, boot, metadata, "boot", frozenset({"boot/config.txt"}),
                          progress=(lambda received, total: progress("staging_boot", received, total))
                          if progress else None)
+            if activity:
+                activity("save_boot")
             self.flush(boot)
             checkpoint("staging_root", None)
+            if activity:
+                activity("prepare_storage")
             self.unmounted(target_root)
             self.mutate(["mkfs.ext4", "-F", "-m", "0", "-L", f"root-{layout.target}", target_root.node], timeout=300)
             with self.mounted(target_root, "root") as root:
@@ -555,17 +576,27 @@ class LinuxPlatform:
                 copy_payload(source, root, metadata, "root",
                              progress=(lambda received, total: progress("staging_root", received, total))
                              if progress else None)
+                if activity:
+                    activity("configure_system")
                 generated = self._generated(layout, metadata, root, boot)
                 checkpoint("verifying_slot", generated)
-                verify_slot(root, boot, metadata, generated, frozenset({"boot/config.txt"}))
+                verify_slot(root, boot, metadata, generated, frozenset({"boot/config.txt"}),
+                            activity=activity)
+                if activity:
+                    activity("save_system")
                 self.flush(root)
                 self.flush(boot)
                 # Durable pending identity precedes the last firmware-visible write.
                 checkpoint("publishing", generated)
+                if activity:
+                    activity("save_boot")
                 destination = safe_child(boot, "config.txt")
                 atomic_write(destination, (source / "boot" / "config.txt").read_bytes(), 0o644)
                 self.flush(boot)
-                verify_slot(root, boot, metadata, generated)
+                verify_slot(root, boot, metadata, generated, activity=activity,
+                            operation="check_final")
+                if activity:
+                    activity("release_storage")
         checkpoint("ready_to_restart", generated)
 
     @staticmethod
@@ -597,12 +628,13 @@ class LinuxPlatform:
             if (path / "autoboot.txt").read_bytes() != data:
                 fail("POINTER", "authoritative pointer readback mismatch")
 
-    def verify_candidate(self, layout, pending):
+    def verify_candidate(self, layout, pending, *, activity=None):
         if pending["slot"] == layout.active:
             fail("SLOT", "candidate readback requires inactive slot")
         with self.mounted(layout.part(ROOT[pending["slot"]]), "root") as root:
             with self.mounted(layout.part(BOOT[pending["slot"]]), "boot") as boot:
-                verify_slot(root, boot, pending["metadata"], pending["generated"])
+                verify_slot(root, boot, pending["metadata"], pending["generated"],
+                            activity=activity, operation="check_restart")
 
     def verify_good(self, layout, identity):
         slot = identity["slot"]

@@ -107,6 +107,30 @@ def press(window, keyval):
     assert window.emit("key-press-event", event), "Navigation key was not handled"
 
 
+def children_of(window):
+    overlay = window.get_child()
+    return overlay.get_child().get_children() + [
+        widget for widget in overlay.get_children() if widget is not overlay.get_child()]
+
+
+def snapshot(window, name):
+    directory = os.environ.get("CLOUDPLAY_SMOKE_SCREENSHOTS")
+    if not directory:
+        return
+    import cairo
+    content = window.get_child().get_child()
+    monitor = Gdk.Display.get_default().get_monitor_at_window(window.get_window())
+    geometry = monitor.get_geometry()
+    assert window.get_allocated_height() <= geometry.height, "Window exceeds physical display height"
+    assert window.get_allocated_width() <= geometry.width, "Window exceeds physical display width"
+    assert content.get_allocated_height() <= window.get_allocated_height(), "Content exceeds display height"
+    assert content.get_allocated_width() <= window.get_allocated_width(), "Content exceeds display width"
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, window.get_allocated_width(),
+                                 window.get_allocated_height())
+    window.draw(cairo.Context(surface))
+    surface.write_to_png(str(Path(directory) / (name + ".png")))
+
+
 def drive_trusted(window, buttons, titles):
     global done
     assert not browser.starts, "Trusted session started a browser"
@@ -116,6 +140,7 @@ def drive_trusted(window, buttons, titles):
         press(window, Gdk.KEY_Return)
     elif step == 1:
         assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
+        snapshot(window, "update-confirmation")
         assert updates.commands == []
         press(window, Gdk.KEY_space)
     elif step == 2:
@@ -123,7 +148,7 @@ def drive_trusted(window, buttons, titles):
         assert updates.commands == []
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_KP_Enter)
-        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
         assert window.get_focus() == confirmation[0]
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_space)
@@ -131,7 +156,7 @@ def drive_trusted(window, buttons, titles):
         assert updates.commands == ["install"] and len(buttons) == 2
         buttons[1].grab_focus()
         press(window, Gdk.KEY_Return)
-        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
         assert window.get_focus() == confirmation[0]
         press(window, Gdk.KEY_KP_Enter)
     elif step == 4:
@@ -146,40 +171,58 @@ def drive_trusted(window, buttons, titles):
                               progress={"received": 5 * 1024**2, "total": 20 * 1024**2})
         updates.changed = True
     elif step == 7:
-        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
+        bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar.get_fraction() == 0.25 and "25% copied" in bar.get_text()
         assert len(buttons) == 1 and window.get_focus() == buttons[0]
+        snapshot(window, "update-copy-progress")
         progress_widgets.update(bar=bar, button=buttons[0])
         window.connect("unmap", lambda *_: progress_unmaps.append(True))
         updates.status["progress"]["received"] = 10 * 1024**2
         updates.changed = True
     elif step == 8:
-        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
+        bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
         assert bar is progress_widgets["bar"] and bar.get_fraction() == 0.5
         assert buttons[0] is progress_widgets["button"] and window.get_focus() == buttons[0]
         assert not progress_unmaps, "A progress refresh remapped the window"
         updates.status.update(phase="verifying_slot", progress=None)
         updates.changed = True
     elif step == 9:
-        bar, = [w for w in window.get_child().get_children() if isinstance(w, Gtk.ProgressBar)]
-        assert bar is progress_widgets["bar"] and bar.get_text() == "Working..."
-        assert any("Checking the installed files" in text for text in titles)
+        bar, = [w for w in children_of(window) if isinstance(w, Gtk.ProgressBar)]
+        assert bar is progress_widgets["bar"] and not bar.get_visible()
+        assert any("Checking installed files" in text for text in titles)
         original_pulse = bar.pulse
         def pulse():
             progress_pulses.append(True)
             original_pulse()
         bar.pulse = pulse
     elif step == 10:
-        assert progress_pulses, "Indeterminate progress did not animate"
-        updates.error = "Update status connection unavailable"
+        assert not progress_pulses, "Unknown work must not pulse a progress-shaped bar"
+        updates.status["operation"] = dict(name="check_installed", received=30 * 1024**2,
+                                          total=100 * 1024**2, elapsed=90)
         updates.changed = True
     elif step == 11:
-        assert not any(isinstance(w, Gtk.ProgressBar) for w in window.get_child().get_children())
+        bar = progress_widgets["bar"]
+        assert bar.get_visible() and bar.get_fraction() == 0.3
+        assert "30% checked" in bar.get_text()
+        assert window.get_focus() == progress_widgets["button"]
+        snapshot(window, "update-file-check")
+        updates.status["operation"] = dict(name="save_system", elapsed=65)
+        updates.changed = True
+    elif step == 12:
+        assert not progress_widgets["bar"].get_visible()
+        assert "Current task: 1:05 elapsed" in titles
+        assert any("Saving system files" in text for text in titles)
+        snapshot(window, "update-storage-wait")
+        assert not progress_unmaps, "Operation changes remapped the update screen"
+        updates.error = "Update status connection unavailable"
+        updates.changed = True
+    elif step == 13:
+        assert not any(isinstance(w, Gtk.ProgressBar) for w in children_of(window))
         assert updates.error in titles
         updates.error = ""
         updates.status.update(phase="promoted", provider_launch_allowed=True)
         updates.changed = True
-    elif step == 12:
+    elif step == 14:
         assert len(buttons) == 2
         for name in ("launcher", "compositor"):
             path = Path(os.environ["XDG_RUNTIME_DIR"]) / (name + "-heartbeat.json")
@@ -196,7 +239,15 @@ def drive_updates(window, children, buttons, titles):
     global done
     if step == 0:
         assert "MAIN MENU" in titles and len(buttons) == 3
+        snapshot(window, "main-menu-updates")
         assert "new version available" in buttons[2].get_label()
+        assert window.get_focus() is buttons[0], "Updates stole initial gaming focus"
+        assert buttons[2].get_valign() == Gtk.Align.START
+        buttons[1].grab_focus()
+        press(window, Gdk.KEY_Up)
+        assert window.get_focus() is buttons[2]
+        press(window, Gdk.KEY_Down)
+        assert window.get_focus() is buttons[1], "Down did not return to the previous provider"
         buttons[2].clicked()
     elif step == 1:
         assert "SYSTEM UPDATES" in titles and len(buttons) == 3
@@ -206,14 +257,14 @@ def drive_updates(window, children, buttons, titles):
     elif step == 2:
         assert "SYSTEM UPDATES" in titles
         buttons[1].clicked()
-        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
         assert window.get_focus() == confirmation[0]
         assert updates.commands == []
         confirmation[1].clicked()
     elif step == 3:
         assert "SYSTEM UPDATES" in titles and updates.commands == ["install"]
         buttons[1].clicked()
-        confirmation = [w for w in window.get_child().get_children() if isinstance(w, Gtk.Button)]
+        confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
         confirmation[0].clicked()
         assert updates.commands == ["install"]
     elif step == 4:
@@ -245,7 +296,7 @@ def drive():
     global step, done
     try:
         window, = [w for w in Gtk.Window.list_toplevels() if w.get_title() == "Cloudplay Home"]
-        children = window.get_child().get_children()
+        children = children_of(window)
         titles = [w.get_text() for w in children if isinstance(w, Gtk.Label)]
         title = next((text for text in titles if text in (
             "MAIN MENU", "GeForce NOW", "Xbox Cloud Gaming",

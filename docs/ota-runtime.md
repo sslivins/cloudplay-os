@@ -167,18 +167,51 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
-The native screen shows measured byte counts and a progress bar for downloading,
-copying boot files, and copying root files. Each percentage describes that phase,
-not the whole update. Copy counters exclude withheld firmware entrypoints;
-100% copied does not bypass flushing, readback, or the final activation gate.
-Counters are volatile daemon telemetry, not repeated writes of the large durable
-candidate manifest. Other busy phases show a pulsing activity bar and their named
-stage, not an invented percentage or time estimate. Status refreshes update these
-widgets in place without remapping the window or stealing the selected action.
-A confirmed restart shows `restarting` while rechecking the candidate; the durable
-state stays `ready_to_restart` until the boot attempt is recorded, preserving
-power-loss recovery. A failed restart restores the restart action and reports its
-error. An unavailable status connection stops the activity indication.
+The native screen keeps five steps visible: Download, Prepare, Install, Check,
+Restart. Completed steps remain marked. Percentages describe only the named task,
+never an estimated fraction of the entire update. Only `promoted` is presented as
+"Update complete". Confirmations describe gaming availability and keeping power
+connected, not internal partitions or slots.
+
+Status adds optional `operation: {name,received,total,elapsed,quiet_seconds}`.
+The closed operation vocabulary in `launcher/updates.py` maps internal telemetry
+to user-facing text. Counters cover downloading, compressed-package hashing,
+decompressed output, archive-layout coverage, extracted file bytes, prepared/source
+file hashing, boot/root copying, installed/final file hashing, and restart readback.
+Archive-layout coverage includes seeks and is labelled as structure coverage, not
+bytes read. Each hashing pass has its own task identity. Totals for file passes
+come from the checked manifest, plus generated files and minus withheld entries
+where applicable. Copy completion still follows file fsync/attribute work.
+
+Opaque operations (signature tool, formatting, profile preservation, flushing,
+configuration, unmount and cleanup) have explicit labels and elapsed task time,
+with **no bouncing progress bar or fabricated percentage/ETA**. Byte counters can
+pause while per-file synchronization or metadata checks finish; after 15 seconds
+without a new measurement the UI explicitly says it is waiting for the next result.
+Elapsed/quiet times use the monotonic clock; responsiveness is not claimed to prove
+storage progress. A full byte count never bypasses remaining integrity checks,
+flushes, config-last publication, or health checks.
+
+All task samples are phase-scoped, replace-only volatile daemon telemetry; no
+per-chunk writes of the large durable candidate manifest. Polling updates existing
+widgets without remapping; action changes preserve selection by action identity,
+not button position. An explicit action arriving during a status poll is queued
+once rather than rejected as busy. "Cancel Update" applies before invalidation;
+`cancellation_requested` explains any wait for an opaque check to return. Verifier
+callbacks check cancellation between chunks/operations.
+
+`finishing` is a transient presentation phase while a completed installation is
+still cleaning up. The durable phase remains `ready_to_restart`, but `can_restart`
+stays false until the install worker releases its lock. A confirmed restart shows
+`restarting` with measured candidate readback, then a named wait while saving boot
+settings. The durable state stays `ready_to_restart` until the attempt is recorded,
+preserving power-loss recovery. A failed restart restores the action and reports
+its error. An unavailable status connection hides progress rather than animating
+stale work. None of these UI states changes promotion or rollback deadlines.
+
+On the Main Menu, a labelled bell sits in the upper-right TV-safe margin. Game
+providers keep initial focus; Up reaches Updates and Down returns to the previous
+provider. No overlay is shown over a running game and updates never steal focus.
 
 Wire request: one UTF-8 JSON line with exactly `{"command":"status"}` (or
 `check`, `install`, `cancel`, `restart`). Maximum request is 1024 bytes;

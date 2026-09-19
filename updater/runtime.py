@@ -38,10 +38,29 @@ class Runtime:
         self._destructive = False
         self._progress = None
         self._restarting = False
+        self._installing = False
+        self._activity = None
+        self._stage_phase = "invalidating"
+
+    def _report_activity(self, phase, operation, received=None, total=None):
+        now = self.clock()
+        previous = self._activity
+        same = previous is not None and previous[0:2] == (phase, operation)
+        started = previous[2] if same else now
+        advanced = (previous[3] if same and previous[4] == received else now)
+        self._activity = (phase, operation, started, advanced, received, total)
+
+    def _verify_activity(self, operation, received=None, total=None):
+        self._cancel_check()
+        self._report_activity("verifying", operation, received, total)
 
     def _report_progress(self, phase, received, total):
         # Telemetry is volatile: never rewrite the durable signed manifest per chunk.
         self._progress = (phase, dict(received=received, total=total))
+        operation = {"downloading": "download", "staging_boot": "copy_boot",
+                     "staging_root": "copy_system"}.get(phase)
+        if operation:
+            self._report_activity(phase, operation, received, total)
 
     def status(self):
         gate = None
@@ -57,6 +76,14 @@ class Runtime:
         state = self.journal.load()
         pending, available = state.get("pending"), state.get("available")
         phase = "restarting" if self._restarting and state["phase"] == "ready_to_restart" else state["phase"]
+        if self._installing and phase == "ready_to_restart":
+            phase = "finishing"
+        activity = self._activity
+        operation = None
+        if activity is not None and activity[0] == phase:
+            operation = dict(name=activity[1], elapsed=max(0, int(self.clock() - activity[2])),
+                             quiet_seconds=max(0, int(self.clock() - activity[3])),
+                             received=activity[4], total=activity[5])
         sample = self._progress
         progress = (dict(sample[1]) if sample is not None and sample[0] == phase
                     else state.get("progress"))
@@ -68,10 +95,13 @@ class Runtime:
             notes=(available or {}).get("notes", "")[:2048],
             published_at=(available or {}).get("published_at"),
             download_size=(available or {}).get("size"),
-            progress=progress, error=state["error"], notice=state.get("notice"),
+            progress=progress, operation=operation,
+            cancellation_requested=self.cancelled.is_set() and phase in ("downloading", "verifying", "finishing"),
+            error=state["error"], notice=state.get("notice"),
             install_enabled=gate is None and state["phase"] == "available",
             mutation_enabled=gate is None, gate=gate, strikes=state["strikes"],
-            can_cancel=state["phase"] in ("downloading", "verifying") and not self._destructive,
+            can_cancel=state["phase"] in ("downloading", "verifying") and not self._destructive
+                       and not self.cancelled.is_set(),
             can_restart=gate is None and phase == "ready_to_restart",
             provider_launch_allowed=state["pending"] is None and state["phase"] not in BUSY | {"recovery_required"},
             last_successful_check=self.discovery.last_successful_check,
@@ -163,13 +193,15 @@ class Runtime:
             staging.mkdir(mode=0o700)
             downloads, extracted = staging / "download", staging / "verified"
             downloads.mkdir(mode=0o700)
+            self._installing = True
             try:
                 self.journal.update(phase="downloading", error=None, progress=None)
                 def progress(received, total):
                     self._report_progress("downloading", received, total)
                 bundle, signature = self.discovery.download(
                     state["available"], downloads, progress=progress,
-                    cancel=self.cancelled.is_set)
+                    cancel=self.cancelled.is_set,
+                    activity=lambda *args: self._report_activity("downloading", *args))
                 self._cancel_check()
                 self.journal.update(phase="verifying", progress=None)
                 metadata = self.verifier(
@@ -178,7 +210,7 @@ class Runtime:
                     current_version=state["current_version"],
                     highest_version=state["highest_version"],
                     minimum_key_epoch=max(state["minimum_key_epoch"], self.config.minimum_key_epoch),
-                    data_schema=self.config.data_schema)
+                    data_schema=self.config.data_schema, activity=self._verify_activity)
                 # SemVer equality ignores build metadata; release identity must not.
                 if metadata["version"] != state["available"]["version"]:
                     fail("RELEASE_IDENTITY", "signed version differs from selected release tag")
@@ -194,6 +226,7 @@ class Runtime:
                         highest_version=metadata["version"],
                         minimum_key_epoch=max(state["minimum_key_epoch"], metadata["key_epoch"]))
                 with self.platform.inhibitor() as inhibitor_alive:
+                    self._stage_phase = "invalidating"
                     started = self.clock()
                     def checkpoint(phase, generated):
                         if not inhibitor_alive() or self.clock() - started >= 1500:
@@ -201,9 +234,12 @@ class Runtime:
                         if generated is not None:
                             pending["generated"] = generated
                         self._progress = None
+                        self._activity = None
+                        self._stage_phase = phase
                         self.journal.update(phase=phase, pending=copy.deepcopy(pending), progress=None)
                     self.platform.stage(extracted, metadata, layout, checkpoint,
-                                        progress=self._report_progress)
+                                        progress=self._report_progress,
+                                        activity=lambda *args: self._report_activity(self._stage_phase, *args))
             except ERRORS as exc:
                 self._error(exc)
                 raise
@@ -211,7 +247,15 @@ class Runtime:
                 self._progress = None
                 # The path is exclusively generated under our private staging root.
                 # Never delete recovered/unknown directories automatically.
-                shutil.rmtree(staging)
+                self._report_activity("finishing", "cleanup")
+                try:
+                    shutil.rmtree(staging)
+                except OSError as exc:
+                    self._error(exc)
+                    raise
+                finally:
+                    self._installing = False
+                    self._activity = None
         return self.status()
 
     def restart(self):
@@ -228,13 +272,16 @@ class Runtime:
             self._restarting = True
             try:
                 self.platform.verify_good(layout, state["last_good_identity"])
-                self.platform.verify_candidate(layout, pending)
+                self.platform.verify_candidate(
+                    layout, pending, activity=lambda *args: self._report_activity("restarting", *args))
+                self._report_activity("restarting", "save_restart")
                 self.platform.write_pointers(layout, layout.active, pending["slot"])
                 pending["attempted"] = True
                 self.journal.update(pending=pending)
                 self.platform.reboot(tryboot=True)
             except BaseException:
                 self._restarting = False
+                self._activity = None
                 raise
         return self.status()
 

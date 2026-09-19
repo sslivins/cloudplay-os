@@ -58,6 +58,16 @@ class Service:
         self._last_mutation = {}
         self._rate_lock = threading.Lock()
         self._next_auto = time.time() + random.uniform(30, 300)
+        self._command = None
+
+    def status(self):
+        status = self.runtime.status()
+        if self._worker_lock.locked():
+            status.update(can_restart=False, install_enabled=False)
+            if status["phase"] == "ready_to_restart" and self._command == "install":
+                status.update(phase="finishing", progress=None,
+                              operation=dict(name="cleanup"))
+        return status
 
     def _work(self, command, *, automatic=False):
         try:
@@ -88,6 +98,7 @@ class Service:
     def start(self, command, *, automatic=False):
         if not self._worker_lock.acquire(blocking=False):
             fail("BUSY", "another updater operation is running")
+        self._command = command
         self._worker = threading.Thread(
             target=self._work, args=(command,), kwargs={"automatic": automatic},
             name="cloudplay-update", daemon=False)
@@ -102,7 +113,7 @@ class Service:
         if uid not in (0, self.runtime.config.launcher_uid):
             fail("IPC_AUTH", "peer is not the dedicated launcher identity")
         if command == "status":
-            return self.runtime.status()
+            return self.status()
         with self._rate_lock:
             now = time.monotonic()
             if now - self._last_mutation.get(uid, -10) < 1:
@@ -113,7 +124,7 @@ class Service:
         if command == "cancel":
             return self.runtime.cancel()
         self.start(command)
-        return self.runtime.status()
+        return self.status()
 
     def _connection(self, connection):
         try:
@@ -152,7 +163,7 @@ class Service:
                 self.start("check", automatic=True)
         if self.runtime.journal.path.exists():
             path = Path(self.runtime.config.socket_path).parent / "status.json"
-            atomic_write(path, canonical_json(self.runtime.status()), 0o644)
+            atomic_write(path, canonical_json(self.status()), 0o644)
 
     def stop(self, *_):
         self._stopping.set()
