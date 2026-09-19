@@ -328,7 +328,8 @@ class Discovery:
                 raise
             raise DiscoveryError("CACHE", "could not persist discovery state") from exc
 
-    def download(self, release: dict, directory: Path, progress=None, cancel=None) -> tuple[Path, Path]:
+    def download(self, release: dict, directory: Path, progress=None, cancel=None,
+                 *, activity=None) -> tuple[Path, Path]:
         """Re-fetch immutable IDs, download four assets; never install or trust them.
 
         ``progress(received_bytes, total_bytes)`` spans all four assets.
@@ -385,8 +386,12 @@ class Discovery:
                             received += len(chunk)
                             if progress:
                                 progress(received, total)
+                            if activity:
+                                activity("download", received, total)
                         if size != asset["size"]:
                             raise DiscoveryError("TRUNCATED", "incomplete asset download")
+                    if activity:
+                        activity("save_download")
                     output.flush()
                     os.fsync(output.fileno())
                 # link() is an atomic no-overwrite publication, unlike replace().

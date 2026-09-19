@@ -68,7 +68,8 @@ class UpdatePresentationTests(unittest.TestCase):
             with self.subTest(progress=progress):
                 status = dict(phase="staging_root", progress=progress)
                 self.assertIsNone(ui.progress_fraction(status))
-                self.assertEqual(ui.progress_text(status), "Working...")
+                self.assertNotIn("Working", ui.progress_text(status))
+                self.assertNotIn("%", ui.progress_text(status))
                 self.assertNotIn("%", ui.summary(status))
         for phase in ("verifying", "verifying_slot", "publishing", "ready_to_restart",
                       "tryboot_running", "restarting", "failed", "promoted"):
@@ -92,16 +93,53 @@ class UpdatePresentationTests(unittest.TestCase):
         client.poll()
         self.assertLess(time.monotonic() - before, 0.1)
         self.assertTrue(started.wait(1))
+        self.assertTrue(client.submit("check"))
         self.assertFalse(client.submit("check"))
         release.set()
         deadline = time.monotonic() + 2
         while client.pending and time.monotonic() < deadline:
             client.poll()
             time.sleep(0.001)
-        self.assertEqual(calls, ["status"])
+        self.assertEqual(calls, ["status", "check"])
         self.assertEqual(client.status["phase"], "idle")
         with self.assertRaises(ValueError):
             client.submit("https://untrusted.invalid/update")
+
+    def test_measurable_preparation_and_readback_operations(self):
+        for phase, name in (("verifying", "unpack"), ("verifying", "extract"),
+                            ("verifying", "check_package"), ("verifying", "check_prepared"),
+                            ("invalidating", "check_source"), ("verifying_slot", "check_installed"),
+                            ("publishing", "check_final"), ("restarting", "check_restart")):
+            status = dict(phase=phase, operation=dict(name=name, received=25, total=100, elapsed=40))
+            self.assertEqual(ui.progress_fraction(status), .25)
+            self.assertIn("25%", ui.progress_text(status))
+            self.assertNotIn("Working", ui.summary(status))
+            self.assertIn("Step", ui.summary(status))
+            self.assertNotIn("Update complete", ui.summary(status))
+
+    def test_storage_wait_hides_stale_count_and_reports_elapsed_only(self):
+        status = dict(phase="staging_boot", progress=dict(received=100, total=100),
+                      operation=dict(name="save_boot", elapsed=65))
+        self.assertIsNone(ui.progress_fraction(status))
+        self.assertEqual(ui.progress_text(status), "Current task: 1:05 elapsed")
+        self.assertIn("Saving startup files", ui.summary(status))
+        status["operation"]["name"] = "check_restart"
+        self.assertIsNone(ui.progress_fraction(status))
+        self.assertNotIn("Checking files before restart", ui.summary(status))
+
+    def test_journey_and_copy_do_not_expose_slots_or_early_success(self):
+        for phase in ("invalidating", "staging", "installing", "staging_root", "finishing"):
+            self.assertNotIn("slot", ui.summary(dict(phase=phase)).lower())
+            self.assertNotIn("restart", dict(ui.actions(dict(phase=phase))).values())
+        self.assertIn("Download (done)", ui.journey(dict(phase="verifying")))
+        self.assertNotIn("Install (done)", ui.journey(dict(phase="verifying")))
+        self.assertNotIn("finished playing", ui.summary(dict(phase="ready_to_restart")))
+        self.assertIn("Update complete", ui.summary(dict(phase="promoted")))
+
+    def test_cancellation_is_update_not_download_and_pending_is_explained(self):
+        self.assertIn(("Cancel Update", "cancel"), ui.actions(dict(phase="verifying", can_cancel=True)))
+        self.assertIn("Cancellation requested", ui.summary(
+            dict(phase="verifying", cancellation_requested=True)))
 
 
 if __name__ == "__main__":

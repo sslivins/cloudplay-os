@@ -171,6 +171,8 @@ def main():
                  "controller-icon.png"):
         asset = Path("/usr/local/lib/cloudplay/launcher/assets", name)
         assert asset.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    bell = Path("/usr/local/lib/cloudplay/launcher/assets/updates-bell.svg")
+    assert ElementTree.parse(bell).getroot().tag == "{http://www.w3.org/2000/svg}svg"
     launcher = Path("/usr/local/lib/cloudplay/launcher/host.py").read_text()
     assert "--kiosk" in launcher and "https://play.geforcenow.com/" in launcher
     assert "https://www.xbox.com/play" in launcher and "chromium-profile" in launcher
@@ -257,7 +259,7 @@ def main():
     paths += ["/usr/local/lib/cloudplay/launcher/assets/" + name for name in
               ("cloudplay-logo.png", "geforce-now-logo.png",
                "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
-               "controller-icon.png")]
+               "controller-icon.png", "updates-bell.svg")]
     paths += [str(path) for path in frames]
     ota = {"enabled": False}
     if Path("/etc/cloudplay/ota-enabled").exists():

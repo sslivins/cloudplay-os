@@ -117,6 +117,33 @@ class ArtifactTests(unittest.TestCase):
         a.verify_tree(self.dest, meta)
         self.assertEqual((self.dest / "boot" / "kernel").read_bytes(), b"kernel")
 
+    def test_extract_and_rehash_report_actual_work_without_changing_manifest(self):
+        meta = self.tar()
+        events = []
+        actual = a._extract_archive(self.archive, self.dest, CONSTRAINTS,
+                                    activity=lambda *value: events.append(value))
+        self.assertEqual(actual, meta)
+        self.assertIn(("extract", 0, 6), events)
+        self.assertIn(("extract", 6, 6), events)
+        self.assertIn(("file_attributes",), events)
+        self.assertIn(("archive_layout", self.archive.stat().st_size,
+                       self.archive.stat().st_size), events)
+        events.clear()
+        a.verify_tree(self.dest, meta, activity=lambda *value: events.append(value))
+        self.assertEqual(events, [("check_prepared", 0, 6), ("check_prepared", 6, 6)])
+        (self.dest / "boot/kernel").write_bytes(b"broken")
+        with self.assertRaisesRegex(a.ArtifactError, "MANIFEST"):
+            a.verify_tree(self.dest, meta, activity=lambda *value: events.append(value))
+
+    def test_hash_progress_counts_chunks_not_time(self):
+        content = b"x" * (2 * 1024**2 + 17)
+        path = self.work / "hash-input"
+        path.write_bytes(content)
+        chunks = []
+        self.assertEqual(a.sha256_file(path, progress=chunks.append),
+                         hashlib.sha256(content).hexdigest())
+        self.assertEqual(chunks, [1024**2, 1024**2, 17])
+
     def test_tampered_file(self):
         meta = self.tar()
         self.extract()

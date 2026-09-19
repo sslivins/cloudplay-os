@@ -67,9 +67,24 @@ class SigningTests(unittest.TestCase):
             constraints = dict(platform="cm5", channel="beta",
                                current_version="0.1.0-beta.3", highest_version="0.1.0-beta.3",
                                minimum_key_epoch=1, data_schema=1)
+            events = []
             metadata = artifacts.verify_bundle(
-                bundle, signature, keys, work / "verified", **constraints)
+                bundle, signature, keys, work / "verified", **constraints,
+                activity=lambda *event: events.append(event))
             self.assertEqual(metadata, built_metadata)
+            operations = [event[0] for event in events]
+            for operation in ("authenticate", "check_package", "unpack", "save_archive",
+                              "archive_layout", "extract", "file_attributes", "check_prepared"):
+                self.assertIn(operation, operations)
+            self.assertLess(operations.index("authenticate"), operations.index("unpack"))
+            for operation, size in (("check_package", catalog["compressed_size"]),
+                                    ("unpack", catalog["uncompressed_size"]),
+                                    ("extract", metadata["payload_bytes"]),
+                                    ("check_prepared", metadata["payload_bytes"])):
+                samples = [event[1:] for event in events if event[0] == operation]
+                self.assertEqual(samples[0], (0, size))
+                self.assertEqual(samples[-1], (size, size))
+                self.assertEqual(samples, sorted(samples))
             artifacts.verify_tree(work / "verified", metadata)
             self.assertEqual((work / "verified/root/case").read_bytes(), b"lower")
             self.assertEqual((work / "verified/root/bin/example").stat().st_mode & 0o777, 0o751)

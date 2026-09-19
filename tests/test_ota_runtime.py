@@ -2,6 +2,7 @@ import copy
 from contextlib import contextmanager
 from dataclasses import replace
 import json
+import shutil
 from pathlib import Path
 import tempfile
 import threading
@@ -21,7 +22,7 @@ class FakeDiscovery:
     def check(self, current, *, force):
         return {"version": "1.1.0+release", "notes": "new", "size": 42}
 
-    def download(self, release, directory, progress, cancel):
+    def download(self, release, directory, progress, cancel, *, activity=None):
         progress(42, 42)
         return directory / "bundle", directory / "signature"
 
@@ -73,12 +74,12 @@ class FakePlatform:
     def verify_good(self, layout, identity):
         self.calls.append("verify_good")
 
-    def verify_candidate(self, layout, pending):
+    def verify_candidate(self, layout, pending, *, activity=None):
         self.calls.append("verify_candidate")
         if self.fail_verify:
             raise UpdateError("SLOT_VERIFY", "changed target")
 
-    def stage(self, source, metadata, layout, checkpoint, *, progress=None):
+    def stage(self, source, metadata, layout, checkpoint, *, progress=None, activity=None):
         self.calls.append("stage")
         checkpoint("invalidating", None)
         if self.staging_failure:
@@ -165,7 +166,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNone(self.runtime.journal.load()["progress"])
 
     def test_install_wires_measured_copy_progress_and_clears_at_next_phase(self):
-        def stage(source, metadata, layout, checkpoint, *, progress):
+        def stage(source, metadata, layout, checkpoint, *, progress, activity):
             checkpoint("staging_root", None)
             progress("staging_root", 25, 100)
             self.assertEqual(self.runtime.status()["progress"], dict(received=25, total=100))
@@ -224,12 +225,57 @@ class RuntimeTests(unittest.TestCase):
 
     def test_restart_readback_is_visible_without_changing_durable_recovery_phase(self):
         self.runtime.install()
-        def verify(layout, pending):
+        def verify(layout, pending, *, activity):
             self.assertEqual(self.runtime.status()["phase"], "restarting")
             self.assertFalse(self.runtime.status()["can_restart"])
             self.assertEqual(self.runtime.journal.load()["phase"], "ready_to_restart")
         self.platform.verify_candidate = verify
         self.runtime.restart()
+
+    def test_cleanup_is_not_restart_ready_and_preserves_durable_recovery(self):
+        cleanup = shutil.rmtree
+        def inspect_cleanup(path):
+            status = self.runtime.status()
+            self.assertEqual(status["phase"], "finishing")
+            self.assertEqual(status["operation"]["name"], "cleanup")
+            self.assertFalse(status["can_restart"])
+            self.assertEqual(self.runtime.journal.load()["phase"], "ready_to_restart")
+            cleanup(path)
+        with patch("updater.runtime.shutil.rmtree", side_effect=inspect_cleanup):
+            self.runtime.install()
+        self.assertTrue(self.runtime.status()["can_restart"])
+        self.assertIsNone(self.runtime.status()["operation"])
+
+    def test_activity_elapsed_does_not_invent_progress_and_resets_by_operation(self):
+        self.runtime.journal.update(phase="verifying")
+        with patch.object(self.runtime.journal, "save") as save:
+            self.runtime._verify_activity("unpack", 25, 100)
+            self.time += 20
+            value = self.runtime.status()["operation"]
+            self.assertEqual(value["received"], 25)
+            self.assertEqual(value["elapsed"], 20)
+            self.assertEqual(value["quiet_seconds"], 20)
+            value["received"] = 80
+            self.assertEqual(self.runtime.status()["operation"]["received"], 25)
+            self.runtime._verify_activity("save_archive")
+            self.assertEqual(self.runtime.status()["operation"]["elapsed"], 0)
+            self.assertIsNone(self.runtime.status()["operation"]["received"])
+            save.assert_not_called()
+        self.runtime.journal.update(phase="staging_root")
+        self.assertIsNone(self.runtime.status()["operation"])
+
+    def test_verifier_activity_can_stop_cancelled_work_before_staging(self):
+        def verify(*args, activity, **kwargs):
+            activity("unpack", 10, 100)
+            status = self.runtime.cancel()
+            self.assertTrue(status["cancellation_requested"])
+            self.assertFalse(status["can_cancel"])
+            activity("unpack", 20, 100)
+            self.fail("Cancellation did not stop verification")
+        self.runtime.verifier = verify
+        with self.assertRaisesRegex(UpdateError, "CANCELLED"):
+            self.runtime.install()
+        self.assertNotIn("stage", self.platform.calls)
 
     def test_restart_not_general_reboot(self):
         with self.assertRaisesRegex(UpdateError, "STATE"):
