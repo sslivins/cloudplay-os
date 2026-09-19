@@ -162,6 +162,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 1:
         assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
         assert any("restart automatically" in text for text in titles)
+        assert any("Do not disconnect from power." in text for text in titles)
         assert not any("ask you to restart" in text for text in titles)
         snapshot(window, "update-confirmation")
         assert updates.commands == []
@@ -179,6 +180,7 @@ def drive_trusted(window, buttons, titles):
         assert updates.commands == ["install"] and len(buttons) == 1
         assert "SYSTEM UPDATES" in titles and "CONFIRM UPDATE" not in titles
         assert updates.status["phase"] == "restarting"
+        assert "Do not disconnect from power." in titles
     elif step == 4:
         updates.status.update(phase="tryboot_running", can_restart=False)
         updates.changed = True

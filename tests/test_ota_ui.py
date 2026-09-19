@@ -165,6 +165,10 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertNotIn("locked", ui.summary({"phase": "idle", "install_enabled": False,
                                               "mutation_enabled": True}))
 
+    def test_late_cancellation_warns_not_to_disconnect_power(self):
+        self.assertIn("Do not disconnect from power.",
+                      ui.error_detail({"code": "CANCEL_TOO_LATE"}))
+
     def test_dismiss_is_presentation_only(self):
         calls = []
         client = ui.Updates(lambda command: calls.append(command))

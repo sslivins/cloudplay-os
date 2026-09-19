@@ -419,7 +419,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_progress.set_show_text(True)
             update_progress.set_no_show_all(True)
             box.pack_start(update_progress, False, False, 0)
-            box.pack_start(style(Gtk.Label(label="Keep power connected."), "status"),
+            box.pack_start(style(Gtk.Label(label="Do not disconnect from power."), "status"),
                            False, False, 0)
         for choice in choices:
             if services:
@@ -604,7 +604,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             return
         if command == "install":
             note = ("You won't be able to play while the update installs.\n"
-                    "This may take several minutes. Keep power connected.\n"
+                    "This may take several minutes. Do not disconnect from power.\n"
                     "Cloudplay will restart automatically to finish the update.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
