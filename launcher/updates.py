@@ -78,7 +78,7 @@ def error_detail(error):
         "SIGNATURE": "This update could not be verified, so it won't be installed.",
         "RELEASE_CHANGED": "This update has changed. Check for updates again.",
         "BUSY": "Finish the current update before trying again.",
-        "CANCEL_TOO_LATE": "Installation has started and can no longer be cancelled. Keep power connected.",
+        "CANCEL_TOO_LATE": "Installation has started and can no longer be cancelled. Do not disconnect from power.",
         "CANCELLED": "You can try the update again later.",
         "STRIKE_LIMIT": "Updates are paused after repeated failures. Get help before trying again.",
         "HARDWARE_GATE": "Updates aren't enabled on this device.",
@@ -270,17 +270,17 @@ def summary(status, *, include_progress=True):
         "checking": "Checking for updates...",
         "downloading": "Downloading the update...",
         "verifying": "Checking your update...",
-        "staging": "Installing your update. Keep power connected.",
-        "installing": "Installing your update. Keep power connected.",
-        "invalidating": "Preparing your device for installation. Keep power connected.",
-        "staging_boot": "Installing startup files. Keep power connected.",
-        "staging_root": "Installing the updated system. Do not remove power.",
+        "staging": "Installing your update. Do not disconnect from power.",
+        "installing": "Installing your update. Do not disconnect from power.",
+        "invalidating": "Preparing your device for installation. Do not disconnect from power.",
+        "staging_boot": "Installing startup files. Do not disconnect from power.",
+        "staging_root": "Installing the updated system. Do not disconnect from power.",
         "verifying_slot": "Checking the installed files...",
-        "publishing": "Finishing installation. Do not remove power.",
+        "publishing": "Finishing installation. Do not disconnect from power.",
         "promoting": "Confirming the updated system...",
-        "finishing": "Finishing installation. Keep power connected.",
-        "ready_to_restart": "Your update is ready. Restart to finish installing it.",
-        "restarting": "Rechecking the installed files before restart. Keep the power connected.",
+        "finishing": "Finishing installation. Do not disconnect from power.",
+        "ready_to_restart": "Select Finish Update to complete the update. Cloudplay will check the files and restart.",
+        "restarting": "Rechecking the installed files before restart. Do not disconnect from power.",
         "tryboot_running": "Checking the updated system...",
         "promoted": "Update complete. Cloudplay is ready to play.",
         "rolled_back": "The update couldn't start. You're back on your previous version.",
@@ -313,7 +313,7 @@ def badge(status):
     if phase == "available":
         return "Updates - new version available"
     if phase == "ready_to_restart":
-        return "Updates - ready to restart"
+        return "Updates - finish update"
     if phase in ("failed", "rolled_back", "recovery_required") and not status.get("notice_dismissed"):
         return "Updates - attention needed"
     if phase in BUSY:
@@ -329,12 +329,10 @@ def actions(status):
         return [("Try Again", "open")]
     if phase not in BUSY and phase != "ready_to_restart":
         result.append(("Check for Updates", "check"))
-    if phase == "ready_to_restart":
-        result.append(("Refresh", "status"))
     if phase == "available" and status.get("install_enabled") is True:
         result.append(("Install Update", "install"))
     if phase == "ready_to_restart" and status.get("can_restart") is True:
-        result.append(("Restart to Update", "restart"))
+        result.append(("Finish Update", "restart"))
     if status.get("can_cancel") is True:
         result.append(("Cancel Update", "cancel"))
     if phase in ("failed", "rolled_back") and not status.get("notice_dismissed"):

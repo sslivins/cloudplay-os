@@ -138,9 +138,9 @@ experimental workflow.
 
 See [artifact verification](ota-artifacts.md) and
 [runtime protocol](ota-runtime.md) for the remaining contracts.
-The native menu presents update status asynchronously, requires explicit
-confirmation for install/restart, and does not interrupt an active streaming
-service. A backend safety lock cannot be bypassed by the UI.
+The native menu presents update status asynchronously and requires one explicit
+install confirmation that includes automatic restart. It does not interrupt an
+active streaming service. A backend safety lock cannot be bypassed by the UI.
 
 A signed lab round-trip or a green test suite is not physical power-loss
 acceptance. The missing-control-file case must not be confused with successful

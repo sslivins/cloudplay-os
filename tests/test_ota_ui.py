@@ -137,7 +137,9 @@ class UpdatePresentationTests(unittest.TestCase):
 
     def test_mutations_require_explicit_service_permission(self):
         for phase, command, flag in (("available", "install", "install_enabled"),
-                                     ("ready_to_restart", "restart", "can_restart")):
+                                     ("ready_to_restart", "restart", "can_restart"),
+                                     ("downloading", "cancel", "can_cancel"),
+                                     ("verifying", "cancel", "can_cancel")):
             for permission in (None, False):
                 self.assertNotIn(command, dict(ui.actions(
                     {"phase": phase, flag: permission})).values())
@@ -157,13 +159,24 @@ class UpdatePresentationTests(unittest.TestCase):
                       "staging_boot", "staging_root", "verifying_slot", "publishing", "promoting"):
             self.assertEqual(ui.actions({"phase": phase, "install_enabled": True}), [])
 
+    def test_no_manual_refresh_action(self):
+        for phase in (*ui.BUSY, "ready_to_restart", "available", "idle", "failed"):
+            with self.subTest(phase=phase):
+                self.assertNotIn("status", dict(ui.actions({"phase": phase})).values())
+        self.assertEqual(ui.actions({"phase": "ready_to_restart", "can_restart": True}),
+                         [("Finish Update", "restart")])
+
     def test_notices_and_progress_are_plain_bounded_text(self):
         self.assertIn("back on your previous version", ui.summary({"phase": "rolled_back"}))
         self.assertIn("17%", ui.summary({"phase": "downloading", "progress": {"received": 17, "total": 100}}))
         self.assertLess(len(ui.summary({"phase": "failed", "error": "x" * 10000})), 500)
-        self.assertIn("ready to restart", ui.badge({"phase": "ready_to_restart"}))
+        self.assertIn("finish update", ui.badge({"phase": "ready_to_restart"}))
         self.assertNotIn("locked", ui.summary({"phase": "idle", "install_enabled": False,
                                               "mutation_enabled": True}))
+
+    def test_late_cancellation_warns_not_to_disconnect_power(self):
+        self.assertIn("Do not disconnect from power.",
+                      ui.error_detail({"code": "CANCEL_TOO_LATE"}))
 
     def test_dismiss_is_presentation_only(self):
         calls = []

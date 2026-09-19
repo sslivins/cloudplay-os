@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 from updater.artifacts import GENERATED_PATHS
 from updater.runtime import Runtime
+from updater.service import Service
 from updater.state import Config, Journal, UpdateError, atomic_write, read_json
 
 
@@ -197,6 +198,65 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(policy["current_version"], "1.0.0")
         self.assertEqual(policy["highest_version"], "1.0.0")
         self.assertFalse(list(self.root.glob("release-*")))
+
+    def test_service_install_cleans_up_then_verifies_and_restarts_automatically(self):
+        service = Service(self.runtime)
+        cleanup = shutil.rmtree
+        order = []
+        def remove_staging(path):
+            order.append("cleanup")
+            self.assertEqual(service.status()["phase"], "finishing")
+            self.assertNotIn(("reboot", True), self.platform.calls)
+            cleanup(path)
+        def readback(layout, pending, *, activity=None):
+            order.append("readback")
+            self.assertEqual(service.status()["phase"], "restarting")
+            self.assertFalse(service.status()["can_restart"])
+            self.assertFalse(self.runtime._installing)
+            self.assertFalse(list(self.root.glob("release-*")))
+            self.assertFalse(self.runtime.journal.load()["pending"]["attempted"])
+        self.platform.verify_candidate = readback
+        service._command = "install"
+        service._worker_lock.acquire()
+        with patch("updater.runtime.shutil.rmtree", side_effect=remove_staging):
+            service._work("install")
+        self.assertEqual(order, ["cleanup", "readback"])
+        self.assertEqual(self.platform.calls[-1], ("reboot", True))
+        self.assertEqual(self.platform.calls.count(("reboot", True)), 1)
+        self.assertTrue(self.runtime.journal.load()["pending"]["attempted"])
+        self.assertIsNone(self.runtime.status()["error"])
+
+    def test_service_cleanup_failure_never_activates_or_restarts(self):
+        service = Service(self.runtime)
+        service._command = "install"
+        service._worker_lock.acquire()
+        with patch("updater.runtime.shutil.rmtree", side_effect=OSError("cleanup failed")), \
+                self.assertLogs("cloudplay.updater", level="ERROR"):
+            service._work("install")
+        self.assertEqual(self.runtime.status()["phase"], "failed")
+        self.assertFalse(self.runtime.journal.load()["pending"]["attempted"])
+        self.assertNotIn(("reboot", True), self.platform.calls)
+        self.assertFalse(any(isinstance(call, tuple) and call[0] == "pointer"
+                             for call in self.platform.calls))
+
+    def test_service_failed_readback_leaves_explicit_finish_action(self):
+        self.platform.fail_verify = True
+        service = Service(self.runtime)
+        service._command = "install"
+        service._worker_lock.acquire()
+        with self.assertLogs("cloudplay.updater", level="ERROR"):
+            service._work("install")
+        status = service.status()
+        self.assertEqual(status["phase"], "ready_to_restart")
+        self.assertTrue(status["can_restart"])
+        self.assertEqual(status["error"]["command"], "restart")
+        self.assertFalse(self.runtime.journal.load()["pending"]["attempted"])
+        self.assertNotIn(("reboot", True), self.platform.calls)
+        with patch.object(self.runtime, "restart") as retry, \
+                patch("updater.service.atomic_write"):
+            service._tick()
+            service._tick()
+        retry.assert_not_called()
 
     def test_exact_release_identity_not_semver_equality(self):
         self.meta["version"] = "1.1.0+other"

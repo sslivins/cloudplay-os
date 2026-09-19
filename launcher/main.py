@@ -419,7 +419,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_progress.set_show_text(True)
             update_progress.set_no_show_all(True)
             box.pack_start(update_progress, False, False, 0)
-            box.pack_start(style(Gtk.Label(label="Keep power connected."), "status"),
+            box.pack_start(style(Gtk.Label(label="Do not disconnect from power."), "status"),
                            False, False, 0)
         for choice in choices:
             if services:
@@ -461,7 +461,10 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         window.show_all()
         window.fullscreen()
         window.present()
-        buttons[home_focus if services else 0].grab_focus()
+        if buttons:
+            buttons[home_focus if services else 0].grab_focus()
+        else:
+            window.set_focus(None)
 
     def refresh_update_notice():
         label = update_badge(updates.status)
@@ -568,9 +571,6 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if trusted_updates:
             if updates.status.get("provider_launch_allowed") is True:
                 choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
-            if not choices:
-                choices.append(("Refresh", lambda: submit_update("status"),
-                                "view-refresh-symbolic", False))
         else:
             choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         message = note or updates.error or update_summary(updates.status, include_progress=False)
@@ -602,17 +602,13 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     def update_action(command):
         if updates is None or browser.service:
             return
-        if command in ("install", "restart"):
-            label = "Install Update" if command == "install" else "Restart to Update"
+        if command == "install":
             note = ("You won't be able to play while the update installs.\n"
-                    "This may take several minutes. Keep power connected.\n"
-                    "We'll ask you to restart when it's ready."
-                    if command == "install" else
-                    "Cloudplay will check your update, then restart to finish installing it.\n"
-                    "Keep power connected until the update is complete.")
+                    "This may take several minutes. Do not disconnect from power.\n"
+                    "Cloudplay will restart automatically to finish the update.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
-                  (label, lambda: submit_update(command), "system-reboot-symbolic", False)], note)
+                  ("Install Update", lambda: submit_update(command), "system-reboot-symbolic", False)], note)
         else:
             submit_update(command)
 
@@ -711,7 +707,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             focus = window.get_focus()
             if focus in buttons:
                 focus.clicked()
-        elif action in ("up", "left", "down", "right"):
+        elif action in ("up", "left", "down", "right") and buttons:
             focus = window.get_focus()
             index = buttons.index(focus) if focus in buttons else 0
             if settings_shortcut is not None:
