@@ -45,12 +45,11 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertNotIn("dismiss", dict(ui.actions(client.status)).values())
 
     def test_measured_progress_for_download_and_each_copy_phase(self):
-        for phase, action in (("downloading", "downloaded"),
-                              ("staging_boot", "copied"), ("staging_root", "copied")):
+        for phase in ("downloading", "staging_boot", "staging_root"):
             with self.subTest(phase=phase):
                 status = dict(phase=phase, progress=dict(received=5 * 1024**2, total=20 * 1024**2))
                 self.assertEqual(ui.progress_fraction(status), 0.25)
-                self.assertEqual(ui.progress_text(status), f"25% {action} (5.0 / 20.0 MiB)")
+                self.assertEqual(ui.progress_text(status), "25%")
                 self.assertIn("25%", ui.summary(status))
                 self.assertNotIn("25%", ui.summary(status, include_progress=False))
                 status["progress"]["received"] = 20 * 1024**2 - 1
@@ -114,7 +113,9 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertEqual(ui.progress_fraction(status), .25)
             self.assertIn("25%", ui.progress_text(status))
             self.assertNotIn("Working", ui.summary(status))
-            self.assertIn("Step", ui.summary(status))
+            self.assertNotIn("Step", ui.summary(status))
+            self.assertNotIn("This measures", ui.summary(status))
+            self.assertNotIn("MiB", ui.progress_text(status))
             self.assertNotIn("Update complete", ui.summary(status))
 
     def test_storage_wait_hides_stale_count_and_reports_elapsed_only(self):
@@ -131,10 +132,25 @@ class UpdatePresentationTests(unittest.TestCase):
         for phase in ("invalidating", "staging", "installing", "staging_root", "finishing"):
             self.assertNotIn("slot", ui.summary(dict(phase=phase)).lower())
             self.assertNotIn("restart", dict(ui.actions(dict(phase=phase))).values())
-        self.assertIn("Download (done)", ui.journey(dict(phase="verifying")))
-        self.assertNotIn("Install (done)", ui.journey(dict(phase="verifying")))
+        self.assertEqual(ui.journey(dict(phase="verifying")), (
+            ("Download", "done"), ("Prepare", "active"), ("Install", "upcoming"),
+            ("Check", "upcoming"), ("Restart", "upcoming")))
+        self.assertTrue(all(state == "done" for _, state in ui.journey(dict(phase="promoted"))))
+        self.assertEqual(ui.journey(dict(phase="available")), ())
         self.assertNotIn("finished playing", ui.summary(dict(phase="ready_to_restart")))
         self.assertIn("Update complete", ui.summary(dict(phase="promoted")))
+
+    def test_version_header_is_separate_from_task_status(self):
+        status = dict(phase="verifying", current_version="0.1.0-beta.6",
+                      available_version="0.1.0-beta.7",
+                      operation=dict(name="unpack", received=25, total=100))
+        self.assertEqual(ui.version_text(status), "Cloudplay OS  0.1.0-beta.6 \u2192 0.1.0-beta.7")
+        self.assertEqual(ui.summary(status, include_progress=False), "Unpacking update files")
+        status.update(candidate_version="0.1.0-beta.8")
+        self.assertTrue(ui.version_text(status).endswith("0.1.0-beta.8"))
+        self.assertEqual(ui.version_text(dict(current_version="0.1.0-beta.7")),
+                         "Cloudplay OS  0.1.0-beta.7")
+        self.assertEqual(ui.version_text({}), "Cloudplay OS")
 
     def test_cancellation_is_update_not_download_and_pending_is_explained(self):
         self.assertIn(("Cancel Update", "cancel"), ui.actions(dict(phase="verifying", can_cancel=True)))

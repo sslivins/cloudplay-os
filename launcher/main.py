@@ -10,7 +10,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
-from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -102,18 +102,47 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             color: #b9d3df;
             font-size: 22px;
         }
-        label.update-journey {
-            color: #b9d3df;
+        label.update-version {
+            color: #91adbf;
+            font-size: 20px;
+            margin-bottom: 18px;
+        }
+        label.stage-name {
+            color: #8196a8;
             font-size: 20px;
         }
-        progressbar trough {
-            min-height: 12px;
+        label.stage-name.active { color: #eef7ff; font-weight: bold; }
+        label.stage-name.done { color: #66dfe6; }
+        frame.stage-marker {
+            border: 2px solid #3a5063;
+            border-radius: 24px;
             background: #112235;
-            border-radius: 6px;
+            color: #8196a8;
+            font-size: 24px;
+        }
+        frame.stage-marker.active {
+            border-color: #66dfe6;
+            color: #66dfe6;
+            box-shadow: 0 0 0 4px rgba(102, 223, 230, 0.12);
+        }
+        frame.stage-marker.done {
+            border-color: #66dfe6;
+            background: #1d4058;
+            color: #66dfe6;
+        }
+        separator.stage-link { min-height: 3px; background: #29435a; }
+        separator.stage-link.done { background: #66dfe6; }
+        progressbar trough {
+            min-height: 24px;
+            background: #112235;
+            border: 1px solid #29435a;
+            border-radius: 13px;
         }
         progressbar progress {
-            background: #66dfe6;
-            border-radius: 6px;
+            min-height: 24px;
+            background: linear-gradient(to bottom, #83edf0, #35b7c9);
+            border-radius: 12px;
+            border: none;
         }
         button {
             color: #eef7ff;
@@ -204,6 +233,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     update_progress = None
     update_choices = None
     update_journey = None
+    update_version = None
     update_activity_text = None
     home_focus = 0
 
@@ -278,11 +308,68 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             row.pack_start(style(Gtk.Label(label=text), "return-text"), False, False, 0)
             box.pack_start(row, False, False, 0)
 
+    def add_timeline(stages):
+        grid = Gtk.Grid(column_spacing=pixels(12), row_spacing=pixels(14))
+        grid.set_halign(Gtk.Align.CENTER)
+        grid.set_margin_top(pixels(8))
+        grid.set_margin_bottom(pixels(20))
+        items = []
+        for position, (name, _) in enumerate(stages):
+            marker = style(Gtk.Frame(), "stage-marker")
+            marker.set_shadow_type(Gtk.ShadowType.NONE)
+            marker.set_halign(Gtk.Align.CENTER)
+            marker.set_size_request(pixels(44), pixels(44))
+            content = Gtk.Overlay()
+            marker.add(content)
+            symbol = Gtk.Label()
+            content.add(symbol)
+            spinner = Gtk.Spinner()
+            spinner.set_halign(Gtk.Align.CENTER)
+            spinner.set_valign(Gtk.Align.CENTER)
+            spinner.set_size_request(pixels(24), pixels(24))
+            spinner.set_no_show_all(True)
+            content.add_overlay(spinner)
+            label = style(Gtk.Label(label=name), "stage-name")
+            label.set_size_request(pixels(125), -1)
+            grid.attach(marker, position * 2, 0, 1, 1)
+            grid.attach(label, position * 2, 1, 1, 1)
+            link = None
+            if position < len(stages) - 1:
+                link = style(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), "stage-link")
+                link.set_size_request(pixels(36), -1)
+                link.set_valign(Gtk.Align.CENTER)
+                grid.attach(link, position * 2 + 1, 0, 1, 1)
+            items.append((marker, symbol, spinner, label, link))
+        box.pack_start(grid, False, False, 0)
+        return items
+
+    def refresh_timeline(stages, animate):
+        for (name, state), (marker, symbol, spinner, label, link) in zip(stages, update_journey):
+            for widget in (marker, label):
+                context = widget.get_style_context()
+                for old_state in ("active", "done", "upcoming"):
+                    context.remove_class(old_state)
+                context.add_class(state)
+            moving = state == "active" and animate
+            symbol.set_text("\u2713" if state == "done" else "" if moving else "\u2022")
+            spinner.set_visible(moving)
+            if moving:
+                spinner.start()
+            else:
+                spinner.stop()
+            marker.get_accessible().set_name(f"{name}: {state}")
+            if link is not None:
+                context = link.get_style_context()
+                if state == "done":
+                    context.add_class("done")
+                else:
+                    context.remove_class("done")
+
     def show(title, choices, note="", services=False, return_help=False, activity=False,
-             journey_text=""):
+             stages=()):
         nonlocal updates_screen, update_confirmation, update_notice
         nonlocal update_message, update_progress, update_choices
-        nonlocal update_journey, update_activity_text
+        nonlocal update_journey, update_activity_text, update_version
         updates_screen = False
         update_confirmation = title == "CONFIRM UPDATE"
         if update_notice is not None:
@@ -290,16 +377,23 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_notice.destroy()
         update_notice = None
         update_message = update_progress = update_choices = None
-        update_journey = update_activity_text = None
+        update_journey = update_activity_text = update_version = None
         for child in box.get_children():
             box.remove(child)
             child.destroy()
         buttons.clear()
-        add_brand(compact=title == "SYSTEM UPDATES")
+        update_page = title in ("SYSTEM UPDATES", "CONFIRM UPDATE")
+        box.set_valign(Gtk.Align.START if update_page else Gtk.Align.CENTER)
+        add_brand(compact=update_page)
         box.pack_start(style(Gtk.Label(label=title), "page-title"), False, False, 0)
-        if journey_text:
-            update_journey = style(Gtk.Label(label=journey_text), "update-journey")
-            box.pack_start(update_journey, False, False, 0)
+        if update_page:
+            update_version = style(Gtk.Label(label=version_text(updates.status)), "update-version")
+            update_version.set_line_wrap(True)
+            update_version.set_max_width_chars(68)
+            update_version.set_justify(Gtk.Justification.CENTER)
+            box.pack_start(update_version, False, False, 0)
+        if stages:
+            update_journey = add_timeline(stages)
         if note:
             status = style(Gtk.Label(label=note), "status")
             status.set_line_wrap(True)
@@ -314,6 +408,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_progress.set_show_text(True)
             update_progress.set_no_show_all(True)
             box.pack_start(update_progress, False, False, 0)
+            box.pack_start(style(Gtk.Label(label="Keep power connected."), "status"),
+                           False, False, 0)
         for choice in choices:
             if services:
                 service, action = choice
@@ -364,21 +460,22 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             choices.append(("Cloudplay OS Main Menu", home, "go-home-symbolic", True))
         message = note or updates.error or update_summary(updates.status, include_progress=False)
         activity = updates.status.get("phase") in UPDATE_BUSY and not updates.error
-        journey_text = journey(updates.status)
-        choice_key = (tuple(choice[0] for choice in choices), activity, bool(journey_text))
+        stages = journey(updates.status)
+        choice_key = (tuple(choice[0] for choice in choices), activity, bool(stages))
         if not updates_screen or choice_key != update_choices:
             focus = window.get_focus()
             old_action = (update_choices[0][buttons.index(focus)]
                           if updates_screen and update_choices and focus in buttons else None)
-            show("SYSTEM UPDATES", choices, message, activity=activity, journey_text=journey_text)
+            show("SYSTEM UPDATES", choices, message, activity=activity, stages=stages)
             updates_screen = True
             update_choices = choice_key
             if old_action in choice_key[0]:
                 buttons[choice_key[0].index(old_action)].grab_focus()
         else:
             update_message.set_text(message)
+        update_version.set_text(version_text(updates.status))
         if update_journey is not None:
-            update_journey.set_text(journey_text)
+            refresh_timeline(stages, activity and not updates.status.get("error"))
         if update_progress is not None:
             fraction = progress_fraction(updates.status)
             update_progress.set_visible(fraction is not None)
