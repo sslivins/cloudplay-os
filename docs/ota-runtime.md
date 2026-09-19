@@ -222,6 +222,8 @@ Percentages describe only the named task, never an estimated fraction of the
 entire update. Only `promoted` is presented as
 "Update complete". Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
+The progress timeline is removed after promotion, including when reopening
+System Updates later; a completed update must not leave old milestone check marks.
 
 Status adds optional `operation: {name,received,total,elapsed,quiet_seconds}`.
 The closed operation vocabulary in `launcher/updates.py` maps internal telemetry

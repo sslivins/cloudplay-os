@@ -328,7 +328,8 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertEqual(ui.journey(dict(phase="verifying")), (
             ("Download", "done"), ("Prepare", "active"), ("Install", "upcoming"),
             ("Check", "upcoming"), ("Restart", "upcoming")))
-        self.assertTrue(all(state == "done" for _, state in ui.journey(dict(phase="promoted"))))
+        self.assertEqual(ui.journey(dict(phase="promoted")), ())
+        self.assertIsNone(ui.step_index(dict(phase="promoted")))
         self.assertEqual(ui.journey(dict(phase="available")), ())
         self.assertNotIn("finished playing", ui.summary(dict(phase="ready_to_restart")))
         self.assertIn("Update complete", ui.summary(dict(phase="promoted")))
