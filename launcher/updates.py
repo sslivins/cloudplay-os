@@ -47,6 +47,19 @@ OPERATIONS = {
 STEPS = ("Download", "Prepare", "Install", "Check", "Restart")
 
 
+def request_text(command):
+    return {
+        "check": "Checking for updates...",
+        "install": "Starting your update...",
+        "cancel": "Cancelling your update...",
+        "restart": "Preparing to restart...",
+        "status": "Refreshing update status...",
+        "open": "Opening update controls...",
+        "close": "Returning to the Main Menu...",
+        "dismiss": "",
+    }[command]
+
+
 def operation(status):
     value = status.get("operation")
     if not isinstance(value, dict) or not isinstance(value.get("name"), str):
@@ -337,7 +350,8 @@ class Updates:
             self.next_poll = self.clock() + 3
             if value is not None and self.dismissed == self.notice_key(value):
                 value["notice_dismissed"] = True
-            changed = changed or value != self.status or error != self.error
+            # A reply must clear temporary action text even when status is unchanged.
+            changed = True
             self.error = error
             if value is not None:
                 self.status = value

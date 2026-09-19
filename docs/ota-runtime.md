@@ -172,6 +172,9 @@ recorded. With a successful check and no error, it says "Cloudplay OS is up to
 date." Failed checks say "Unable to check for updates." and retain their diagnostic
 code/details. Errors carry an optional `command` field so check failures are not
 mislabelled as installation failures; rollback and recovery messages retain priority.
+Brief action feedback names the action (for example, "Checking for updates..."),
+not the internal request. Every service reply refreshes the presentation, even if
+the status is unchanged, so completed checks cannot leave temporary feedback stuck.
 
 The native screen separates a fixed target-version header ("Updating Cloudplay OS
 to VERSION", without the currently installed version), a graphical five-stage

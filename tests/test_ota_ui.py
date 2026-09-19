@@ -11,6 +11,38 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_action_feedback_describes_the_action(self):
+        self.assertEqual(ui.request_text("check"), "Checking for updates...")
+        self.assertEqual(ui.request_text("install"), "Starting your update...")
+        self.assertEqual(ui.request_text("dismiss"), "")
+        for command in ui.COMMANDS:
+            self.assertNotIn("request", ui.request_text(command).lower())
+
+    def test_unchanged_reply_clears_temporary_action_feedback(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.status = dict(phase="idle", last_successful_check=10)
+        for command in ("check", "status"):
+            with self.subTest(command=command):
+                client.pending, client.active_command = True, command
+                client.results.put((dict(client.status), ""))
+                self.assertTrue(client.poll())
+                self.assertFalse(client.pending)
+                self.assertIsNone(client.active_command)
+                self.assertFalse(client.poll())
+
+    def test_identical_error_reply_also_refreshes_the_screen(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.error = "Unavailable"
+        client.pending = True
+        client.results.put((None, "Unavailable"))
+        self.assertTrue(client.poll())
+        self.assertEqual(client.error, "Unavailable")
+        self.assertFalse(client.pending)
+
     def test_idle_only_claims_up_to_date_after_successful_check(self):
         self.assertEqual(ui.summary({"phase": "idle"}), "Check for updates")
         for last_check in (None, True, -1, "10", float("nan"), float("inf")):

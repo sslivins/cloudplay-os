@@ -10,7 +10,7 @@ from pathlib import Path
 from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
-from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text
+from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -503,9 +503,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
 
     def submit_update(command):
         if updates.submit(command):
-            show_updates("Sending update request...")
+            show_updates(request_text(command))
         else:
-            show_updates("An update request is already in progress.")
+            show_updates()
 
     def home(note=""):
         nonlocal confirming, recovering
