@@ -80,7 +80,8 @@ class Service:
             try:
                 with self.runtime.journal.operation(timeout=5):
                     self.runtime.journal.update(error=dict(
-                        code=getattr(exc, "code", "IO"), message=str(exc)[:2048]))
+                        code=getattr(exc, "code", "IO"), message=str(exc)[:2048],
+                        command=command))
             except ERRORS:
                 LOG.exception("Cannot persist updater failure")
         except Exception as exc:
@@ -89,7 +90,8 @@ class Service:
             try:
                 with self.runtime.journal.operation(timeout=5):
                     self.runtime.journal.update(error=dict(
-                        code="INTERNAL", message=f"{type(exc).__name__}: {exc}"[:2048]))
+                        code="INTERNAL", message=f"{type(exc).__name__}: {exc}"[:2048],
+                        command=command))
             except ERRORS:
                 LOG.exception("Cannot persist internal updater failure")
         finally:

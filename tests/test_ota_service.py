@@ -12,6 +12,20 @@ from updater.state import Config, UpdateError
 
 
 class ServiceTests(unittest.TestCase):
+    def test_worker_persists_command_for_expected_and_unexpected_errors(self):
+        for error in (UpdateError("NETWORK", "Offline"), RuntimeError("Unexpected")):
+            with self.subTest(error=error):
+                runtime = MagicMock(config=Config())
+                runtime.check.side_effect = error
+                service = Service(runtime)
+                service._worker_lock.acquire()
+                with self.assertLogs("cloudplay.updater", level="ERROR"):
+                    service._work("check")
+                saved = runtime.journal.update.call_args.kwargs["error"]
+                self.assertEqual(saved["command"], "check")
+                self.assertIn(str(error), saved["message"])
+                self.assertFalse(service._worker_lock.locked())
+
     def test_cleanup_readiness_is_hidden_until_worker_releases_lock(self):
         runtime = Mock(config=Config())
         runtime.status.side_effect = lambda: dict(

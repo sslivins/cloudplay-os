@@ -11,6 +11,39 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_idle_only_claims_up_to_date_after_successful_check(self):
+        self.assertEqual(ui.summary({"phase": "idle"}), "Check for updates")
+        for last_check in (None, True, -1, "10", float("nan"), float("inf")):
+            with self.subTest(last_check=last_check):
+                self.assertEqual(ui.summary(dict(phase="idle", last_successful_check=last_check)),
+                                 "Check for updates")
+        self.assertEqual(ui.summary(dict(phase="idle", last_successful_check=10)),
+                         "Cloudplay OS is up to date.")
+        self.assertNotIn("up to date", ui.summary(dict(
+            phase="idle", last_successful_check=10, error="Status unavailable")))
+
+    def test_check_failure_is_not_an_install_failure_or_current_success(self):
+        error = dict(command="check", code="NETWORK", message="Offline")
+        for phase in ("idle", "checking", "failed"):
+            text = ui.summary(dict(phase=phase, last_successful_check=10, error=error))
+            self.assertEqual(text, "Unable to check for updates.\nNETWORK: Offline")
+        error["command"] = "install"
+        self.assertTrue(ui.summary(dict(phase="failed", error=error)).startswith(
+            "The update could not be completed."))
+        error["command"] = "check"
+        self.assertIn("previous system was restored", ui.summary(
+            dict(phase="rolled_back", error=error)))
+
+    def test_check_request_failure_has_friendly_summary_and_diagnostic(self):
+        def send(command):
+            raise OSError("Connection refused")
+        client = ui.Updates(send)
+        self.addCleanup(client.close)
+        self.assertTrue(client.submit("check"))
+        value, error = client.results.get(timeout=2)
+        self.assertIsNone(value)
+        self.assertEqual(error, "Unable to check for updates.\nConnection refused")
+
     def test_mutations_require_explicit_service_permission(self):
         for phase, command, flag in (("available", "install", "install_enabled"),
                                      ("ready_to_restart", "restart", "can_restart")):

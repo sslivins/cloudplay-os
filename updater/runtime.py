@@ -108,8 +108,10 @@ class Runtime:
             next_check_at=self.discovery.next_check_at,
         )
 
-    def _error(self, exc):
+    def _error(self, exc, *, command=None):
         error = dict(code=getattr(exc, "code", "IO"), message=str(exc)[:2048])
+        if command is not None:
+            error["command"] = command
         if self.journal.path.exists():
             self.journal.update(phase="failed", error=error)
         return error
@@ -150,7 +152,7 @@ class Runtime:
                 self.journal.update(phase="available" if release else "idle",
                                     available=release, progress=None, error=None)
             except ERRORS as exc:
-                self._error(exc)
+                self._error(exc, command="check")
                 raise
         return self.status()
 

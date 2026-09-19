@@ -167,6 +167,12 @@ Progress is `{received,total}`, not a percent scalar. Use `can_restart` for the
 restart action, not `install_enabled`. `dismiss` is not an IPC command; notices
 may be dismissed in the presentation layer without a new root mutation.
 
+An idle screen says "Check for updates" until a successful discovery check is
+recorded. With a successful check and no error, it says "Cloudplay OS is up to
+date." Failed checks say "Unable to check for updates." and retain their diagnostic
+code/details. Errors carry an optional `command` field so check failures are not
+mislabelled as installation failures; rollback and recovery messages retain priority.
+
 The native screen separates a fixed target-version header ("Updating Cloudplay OS
 to VERSION", without the currently installed version), a graphical five-stage
 timeline (Download, Prepare, Install, Check, Restart), and the current task.

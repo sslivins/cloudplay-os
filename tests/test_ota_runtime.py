@@ -133,6 +133,21 @@ class RuntimeTests(unittest.TestCase):
         self.trusted.start()
         self.addCleanup(self.trusted.stop)
 
+    def test_check_failure_preserves_context_and_retry_clears_error(self):
+        with patch.object(self.runtime.discovery, "check",
+                          side_effect=UpdateError("NETWORK", "Offline")):
+            with self.assertRaises(UpdateError):
+                self.runtime.check()
+        status = self.runtime.status()
+        self.assertEqual(status["phase"], "failed")
+        self.assertEqual(status["error"]["command"], "check")
+        self.assertEqual(status["error"]["code"], "NETWORK")
+        with patch.object(self.runtime.discovery, "check", return_value=None):
+            status = self.runtime.check()
+        self.assertEqual(status["phase"], "idle")
+        self.assertIsNone(status["error"])
+        self.assertEqual(status["last_successful_check"], 10)
+
     def test_install_ready_preserves_full_metadata_and_floors(self):
         result = self.runtime.install()
         self.assertEqual(result["phase"], "ready_to_restart")

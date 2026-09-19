@@ -182,8 +182,11 @@ def progress_detail(status):
 
 def summary(status, *, include_progress=True):
     phase = status.get("phase", "unknown")
+    last_check = status.get("last_successful_check")
+    checked = type(last_check) in (int, float) and 0 <= last_check <= time.time()
+    error = status.get("error")
     text = {
-        "idle": "No update is waiting.",
+        "idle": "Cloudplay OS is up to date." if checked and not error else "Check for updates",
         "available": "An update is available.",
         "checking": "Checking for updates...",
         "downloading": "Downloading the update...",
@@ -208,10 +211,12 @@ def summary(status, *, include_progress=True):
         "recovery_required": "The update needs local recovery. Automatic restart is stopped.",
         "unknown": "Waiting for the update service...",
     }.get(phase, "Update status: " + str(phase))
+    if (phase in ("idle", "checking", "failed") and isinstance(error, dict)
+            and error.get("command") == "check"):
+        text = "Unable to check for updates."
     lines = [progress_detail(status) if phase in BUSY and phase != "checking" else text]
     if include_progress and progress_counts(status) is not None:
         lines.append(progress_text(status))
-    error = status.get("error")
     if error:
         if isinstance(error, dict):
             error = str(error.get("code", "ERROR")) + ": " + str(error.get("message", ""))
@@ -290,7 +295,10 @@ class Updates:
                     raise ValueError("Invalid update-service response")
                 result = (value, "")
             except (OSError, RuntimeError, ValueError) as exc:
-                result = (None, str(exc)[:400])
+                message = str(exc)[:400]
+                if command == "check":
+                    message = "Unable to check for updates.\n" + message
+                result = (None, message)
                 print("Cloudplay update client: " + result[1], file=sys.stderr)
             self.results.put(result)
 
