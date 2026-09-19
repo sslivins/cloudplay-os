@@ -774,7 +774,8 @@ class LinuxPlatform:
                 fail("HEALTH", "heartbeat is not owned by the isolated update identity")
             heartbeat = read_json(path, 4096)
             if (heartbeat.get("boot_id") != boot_id or type(heartbeat.get("monotonic")) not in (int, float)
-                    or not 0 <= current - heartbeat["monotonic"] <= 30):
+                    or not 0 <= current - heartbeat["monotonic"] <= min(
+                        30, self.config.stabilization_seconds / 2)):
                 fail("HEALTH", f"missing/stale {name} heartbeat")
         probe = Path(self.config.state_dir) / ".health-write"
         atomic_write(probe, b"ok")

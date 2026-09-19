@@ -121,7 +121,7 @@ def step_index(status):
         return 2
     if phase in ("verifying_slot", "publishing", "finishing"):
         return 3
-    if phase in ("ready_to_restart", "restarting", "tryboot_running", "promoting", "promoted"):
+    if phase in ("ready_to_restart", "restarting", "tryboot_running", "promoting"):
         return 4
     return None
 
@@ -130,9 +130,8 @@ def journey(status):
     index = step_index(status)
     if index is None:
         return ()
-    complete = status.get("phase") == "promoted"
     return tuple(
-        (name, "done" if position < index or complete else
+        (name, "done" if position < index else
          "active" if position == index else "upcoming")
         for position, name in enumerate(STEPS))
 
@@ -218,6 +217,8 @@ def progress_fraction(status):
 
 
 def progress_text(status):
+    if status.get("phase") in ("starting", "returning", "tryboot_running", "promoting"):
+        return ""
     counts = progress_counts(status)
     if counts is None:
         sample = operation(status)

@@ -276,7 +276,7 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 14:
         assert len(buttons) == 2
-        check_timeline(window, 5, moving=False)
+        assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
         snapshot(window, "update-complete")
         updates.status.update(phase="verifying", provider_launch_allowed=False, can_cancel=True,
                               operation=dict(name="unpack", received=45, total=100))
@@ -311,7 +311,14 @@ def drive_trusted(window, buttons, titles):
         buttons[-1].clicked()
     elif step == 18:
         assert "SETTINGS" in titles and len(buttons) == 3
-        buttons[1].clicked()
+        buttons[0].clicked()
+        assert updates.status["phase"] == "promoted"
+        assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
+        assert any(isinstance(w, Gtk.Label) and "Update complete" in w.get_text()
+                   for w in children_of(window))
+        press(window, Gdk.KEY_Escape)
+        settings_buttons = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
+        settings_buttons[1].clicked()
     elif step == 19:
         assert "BETA RELEASES" in titles and len(buttons) == 2
         assert any("Beta releases: On" in text for text in titles)
@@ -340,6 +347,7 @@ def drive_trusted(window, buttons, titles):
     elif step == 25:
         assert not buttons
         assert "Finishing your update..." in titles
+        assert "Waiting for progress..." not in titles
         assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
         header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
         assert not header.get_visible()

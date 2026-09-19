@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 import errno
 import json
+import logging
 import os
 from pathlib import Path
 import stat
@@ -119,7 +120,7 @@ class Config:
     minimum_key_epoch: int = 1
     minimum_eeprom: str = ""
     boot_order: str = ""
-    stabilization_seconds: int = 120
+    stabilization_seconds: int = 10
     deadline_seconds: int = 600
     strike_limit: int = 3
 
@@ -132,6 +133,11 @@ class Config:
             fail("CONFIG", "unknown configuration fields")
         result = cls(**value)
         result.validate()
+        if result.stabilization_seconds == 120:
+            # Leave shared policy readable by older slots during rollback.
+            logging.getLogger("cloudplay.updater").info(
+                "Using 10-second stabilization in place of the legacy 120-second default; policy file unchanged")
+            result = replace(result, stabilization_seconds=10)
         return result
 
     def validate(self):
@@ -145,7 +151,7 @@ class Config:
                      "strike_limit"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 1:
                 fail("CONFIG", f"invalid {name}")
-        if not 30 <= self.stabilization_seconds < self.deadline_seconds <= 1800:
+        if not 10 <= self.stabilization_seconds < self.deadline_seconds <= 1800:
             fail("CONFIG", "invalid health time bounds")
         if self.channel not in ("stable", "beta") or self.platform not in ("pi5", "cm5"):
             fail("CONFIG", "invalid platform/channel")

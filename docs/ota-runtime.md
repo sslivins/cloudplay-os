@@ -57,8 +57,10 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
 * Launcher/compositor publish bounded JSON heartbeat files at
   `/run/cloudplay-update-ui/launcher-heartbeat.json` and
   `/run/cloudplay-update-ui/compositor-heartbeat.json`:
-  `{"boot_id":"<kernel boot UUID>","monotonic":123.0}`. They must update more
-  often than every 30 seconds, including with a disconnected display.
+  `{"boot_id":"<kernel boot UUID>","monotonic":123.0}`. They normally update
+  every two seconds, including with a disconnected display. The allowed age is
+  half the configured stabilization window, capped at 30 seconds (five seconds
+  with the current ten-second default).
   Their identities and parent directories must prevent browser forgery.
 * Firstboot remains responsible for persistent NetworkManager connections,
   onboarding state and SSH identity binds before networking starts. Runtime
@@ -220,6 +222,8 @@ Percentages describe only the named task, never an estimated fraction of the
 entire update. Only `promoted` is presented as
 "Update complete". Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
+The progress timeline is removed after promotion, including when reopening
+System Updates later; a completed update must not leave old milestone check marks.
 
 Status adds optional `operation: {name,received,total,elapsed,quiet_seconds}`.
 The closed operation vocabulary in `launcher/updates.py` maps internal telemetry
@@ -323,6 +327,11 @@ Firstboot provisions `/data/cloudplay/update/config.json` as root:root
 The state directory is root:root 0700. Seed configuration only when absent;
 never replace an existing operator policy with baked defaults on later boots.
 This keeps the same reviewed policy available across both slots and rollback.
+When loading an existing policy, the historical `stabilization_seconds: 120`
+default is interpreted as 10 seconds by this release and logged. The shared file
+is not rewritten, so older slots can still validate their original policy during
+rollback. Other explicit durations are preserved; omitted durations use the
+new default. No deadline, hardware approval, or isolation setting is changed.
 The CLI and installed units default to this persistent policy. The slot-local
 `/etc/cloudplay/updater.json` supplies only the firstboot seed; it must not
 replace persistent policy during a candidate boot, because its default-false
@@ -355,7 +364,7 @@ non-root writable. Paths must be absolute and contain no whitespace.
   "minimum_key_epoch": 1,
   "minimum_eeprom": "",
   "boot_order": "",
-  "stabilization_seconds": 120,
+  "stabilization_seconds": 10,
   "deadline_seconds": 600,
   "strike_limit": 3
 }
@@ -450,10 +459,17 @@ old profile, not a post-promotion snapshot.
 Health verifies active disk/slot, signed release-record hash and identity,
 config hash, slot sentinel, writable data, correct per-slot profile mount and
 ownership, three appliance services, and fresh launcher/compositor heartbeats.
-Internet and display presence are not required. It requires 120 continuous
+Internet and display presence are not required. It requires 10 continuous
 healthy seconds within a 600-second candidate deadline; a failed check resets
-the stabilization interval, as does a gap exceeding 30 seconds between health
-samples. Deadline state is boot-bound and not extended by
+the stabilization interval, as does a gap exceeding the stabilization window
+(capped at 30 seconds) between health samples. The timer starts five seconds
+after boot and runs again two seconds after each completed check. Boot readiness,
+check execution, and sampling add some time beyond the ten-second window; this
+is not a promise of a ten-second total reboot. Launcher and compositor heartbeats
+must be no older than five seconds under the default policy, so a single stale
+startup heartbeat cannot satisfy the shorter window. The finishing screen does
+not show the misleading "Waiting for progress..." placeholder.
+Deadline state is boot-bound and not extended by
 repeated reconciliation. Health samples wait up to five seconds for the shared
 operation lock so a brief concurrent deadline probe does not discard a sample.
 Other operations, including deadline probes, retain nonblocking acquisition;
