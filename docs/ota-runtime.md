@@ -57,7 +57,7 @@ gate. Real power-cut/torn-write acceptance remains outstanding.
 * Launcher/compositor publish bounded JSON heartbeat files at
   `/run/cloudplay-update-ui/launcher-heartbeat.json` and
   `/run/cloudplay-update-ui/compositor-heartbeat.json`:
-  `{"boot_id":"<kernel boot UUID>","monotonic":123.0}`. They must update more
+  `{"boot_id":"<kernel boot UUID>","monotonic":123.0}`. They normally update
   every two seconds, including with a disconnected display. The allowed age is
   half the configured stabilization window, capped at 30 seconds (five seconds
   with the current ten-second default).
