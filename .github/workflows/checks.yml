@@ -14,6 +14,27 @@ jobs:
       - run: python3 -m unittest discover -s tests -v
       - name: Check root-owned filesystem and peer-isolation fixtures
         run: sudo python3 -m unittest tests.test_ota_image tests.test_ota_platform tests.test_ota_maintenance -v
+      - name: Install native launcher smoke tools
+        run: sudo apt-get install -y labwc python3-gi python3-gi-cairo gir1.2-gtk-3.0
+      - name: Exercise native Home and update screens
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT
+          mkdir "$work/config"
+          for mode in home updates trusted; do
+            updates=0
+            trusted=0
+            if [[ "$mode" == updates ]]; then updates=1; fi
+            if [[ "$mode" == trusted ]]; then trusted=1; fi
+            env XDG_RUNTIME_DIR="$work" WLR_BACKENDS=headless WLR_RENDERER=pixman \
+              CLOUDPLAY_SMOKE_UPDATES="$updates" CLOUDPLAY_SMOKE_TRUSTED="$trusted" \
+              CLOUDPLAY_SMOKE_RESULT="$work/$mode.json" \
+              timeout --kill-after=5 20 dbus-run-session -- labwc -C "$work/config" \
+              -s 'python3 scripts/check-launcher.py; labwc -e'
+            test -f "$work/$mode.json"
+          done
       - run: python3 scripts/artifacts.py validate --allow-unset
       - run: node --check onboarding/setup.js
       - name: Shell syntax

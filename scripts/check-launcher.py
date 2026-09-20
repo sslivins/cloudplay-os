@@ -187,6 +187,7 @@ def drive_trusted(window, buttons, titles):
     assert not browser.starts, "Trusted session started a browser"
     if step == 0:
         assert "SYSTEM UPDATES" in titles and len(buttons) == 3
+        buttons[0].grab_focus()
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_Return)
     elif step == 1:
