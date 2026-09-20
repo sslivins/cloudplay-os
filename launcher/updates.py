@@ -231,11 +231,7 @@ def progress_detail(status):
         return "Cancelling your update. Waiting for the current task to stop safely."
     sample = operation(status)
     if sample:
-        text = OPERATIONS[sample["name"]][1]
-        if (progress_counts(status) is not None
-                and type(sample.get("quiet_seconds")) is int and sample["quiet_seconds"] >= 15):
-            text += ". No new progress reported yet."
-        return text
+        return OPERATIONS[sample["name"]][1]
     return {
         "downloading": "Connecting to the update service",
         "verifying": "Checking and preparing the downloaded files",

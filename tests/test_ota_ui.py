@@ -372,6 +372,19 @@ class UpdatePresentationTests(unittest.TestCase):
                     self.assertEqual(ui.progress_text(status), "")
         self.assertEqual(ui.progress_text(dict(phase="downloading")), "")
 
+    def test_quiet_measurements_keep_step_description_and_real_percentage(self):
+        for name, (phases, label, measurable) in ui.OPERATIONS.items():
+            if not measurable:
+                continue
+            for quiet_seconds in (0, 15, 60, 600):
+                with self.subTest(name=name, quiet_seconds=quiet_seconds):
+                    status = dict(phase=phases[0], operation=dict(
+                        name=name, received=25, total=100, quiet_seconds=quiet_seconds))
+                    self.assertEqual(ui.progress_detail(status), label)
+                    self.assertEqual(ui.progress_fraction(status), .25)
+                    self.assertEqual(ui.progress_text(status), "25%")
+                    self.assertNotIn("No new progress", ui.summary(status))
+
     def test_journey_and_copy_do_not_expose_slots_or_early_success(self):
         for phase in ("invalidating", "staging", "installing", "staging_root", "finishing"):
             self.assertNotIn("slot", ui.summary(dict(phase=phase)).lower())

@@ -252,9 +252,9 @@ milestone, with no elapsed timer or waiting-for-progress placeholder and
 **no bouncing progress bar or fabricated percentage/ETA**. The active
 milestone animates during measurable and opaque work, but not while waiting for
 an explicit recovery action, after completion, or when the status connection fails.
-Byte counters can
-pause while per-file synchronization or metadata checks finish; after 15 seconds
-without a new measurement the UI explicitly says it is waiting for the next result.
+Byte counters can pause while per-file synchronization or metadata checks finish.
+During these pauses the UI keeps the operation label, active spinner, and last
+measured percentage, without adding a "No new progress" warning.
 Elapsed/quiet times use the monotonic clock; responsiveness is not claimed to prove
 storage progress. A full byte count never bypasses remaining integrity checks,
 flushes, config-last publication, or health checks.
