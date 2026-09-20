@@ -498,11 +498,19 @@ class LinuxPlatform:
             fail("PROFILE", "interrupted profile snapshot requires operator cleanup")
         # cp -a preserves numeric IDs, xattrs and links without following them.
         # Refuse special files and require safe relative links in user profiles.
+        stale_locks = []
         for parent, dirs, names in os.walk(source, followlinks=False):
             for name in dirs + names:
                 path = Path(parent) / name
                 mode = path.lstat().st_mode
                 if stat.S_ISLNK(mode):
+                    relative = path.relative_to(source)
+                    if (len(relative.parts) == 2
+                            and relative.parts[0] in ("chromium-profile", "xbox-profile")
+                            and relative.name in ("SingletonLock", "SingletonCookie", "SingletonSocket")
+                            and path.lstat().st_uid == self.config.browser_uid):
+                        stale_locks.append(relative)
+                        continue
                     link = os.readlink(path)
                     if Path(link).is_absolute() or not (path.parent / link).resolve().is_relative_to(source.resolve()):
                         fail("PROFILE", "profile has an escaping symlink (close Chromium first)")
@@ -510,6 +518,13 @@ class LinuxPlatform:
                     fail("PROFILE", "profile contains a live socket or special file")
         self.mutate(["cp", "-a", "--reflink=auto", "--", str(source), str(temporary)], timeout=600)
         self.provider_idle()
+        # Stopped Chromium can leave process locks behind. Never carry them to
+        # the new slot or follow their targets; leave the last-good profile intact.
+        for relative in stale_locks:
+            path = temporary / relative
+            if not path.is_symlink():
+                fail("PROFILE", "profile lock changed during snapshot")
+            path.unlink()
         self.flush(temporary)
         if target.is_symlink():
             fail("PROFILE", "target profile is a symlink")

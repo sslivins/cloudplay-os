@@ -28,6 +28,68 @@ def table(disk="/dev/mmcblk0"):
 
 
 class PlatformTests(unittest.TestCase):
+    def _profile_snapshot_fixture(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        profiles = base / "profiles"
+        source = profiles / "A"
+        source.mkdir(parents=True)
+        config = Config(profile_root=str(profiles), profile_mount=str(source),
+                        browser_uid=os.getuid())
+        platform = LinuxPlatform(config)
+        platform.provider_idle = Mock()
+        platform.mount_info = Mock(return_value={"maj:min": "179:6"})
+        platform.flush = Mock()
+        return base, source, platform, SimpleNamespace(active="A", target="B")
+
+    @unittest.skipUnless(os.name == "posix", "Profile snapshots require Linux cp and symlinks")
+    def test_profile_snapshot_omits_only_known_stale_browser_locks(self):
+        base, source, platform, layout = self._profile_snapshot_fixture()
+        outside = base / "outside"
+        outside.write_bytes(b"untouched")
+        for profile in ("chromium-profile", "xbox-profile"):
+            directory = source / profile
+            (directory / "Default").mkdir(parents=True)
+            (directory / "Default/Login Data").write_bytes(b"preserved fixture")
+            for name, target in (("SingletonLock", "cloudplay-1234"),
+                                 ("SingletonCookie", "123456"), ("SingletonSocket", str(outside))):
+                (directory / name).symlink_to(target)
+        with patch.object(Config, "mutation_gate"):
+            platform.snapshot_profiles(layout)
+        self.assertEqual(platform.provider_idle.call_count, 2)
+        for profile in ("chromium-profile", "xbox-profile"):
+            copied = source.parent / "B" / profile
+            self.assertEqual((copied / "Default/Login Data").read_bytes(), b"preserved fixture")
+            for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+                self.assertTrue((source / profile / name).is_symlink())
+                self.assertFalse((copied / name).exists())
+                self.assertFalse((copied / name).is_symlink())
+        self.assertEqual(outside.read_bytes(), b"untouched")
+
+    @unittest.skipUnless(os.name == "posix", "Profile snapshots require Linux cp and symlinks")
+    def test_profile_snapshot_still_rejects_other_escaping_links(self):
+        for relative in ("chromium-profile/Default/SingletonSocket",
+                         "other-profile/SingletonSocket", "chromium-profile/unrecognized-link"):
+            with self.subTest(relative=relative):
+                base, source, platform, layout = self._profile_snapshot_fixture()
+                path = source / relative
+                path.parent.mkdir(parents=True)
+                path.symlink_to(base / "outside")
+                with patch.object(Config, "mutation_gate"), \
+                        self.assertRaisesRegex(UpdateError, "escaping symlink"):
+                    platform.snapshot_profiles(layout)
+                self.assertFalse((source.parent / "B.new").exists())
+
+    @unittest.skipUnless(os.name == "posix", "Profile snapshots require Linux cp and symlinks")
+    def test_profile_snapshot_never_copies_a_running_browser(self):
+        _, source, platform, layout = self._profile_snapshot_fixture()
+        platform.provider_idle.side_effect = UpdateError("PROVIDER_ACTIVE", "browser is running")
+        with patch.object(Config, "mutation_gate"), \
+                self.assertRaisesRegex(UpdateError, "PROVIDER_ACTIVE"):
+            platform.snapshot_profiles(layout)
+        self.assertFalse((source.parent / "B.new").exists())
+
     def test_short_window_requires_fresh_launcher_and_compositor_heartbeats(self):
         config = Config()
         platform = LinuxPlatform(config, runner=Mock(return_value=SimpleNamespace(stdout="active")))
