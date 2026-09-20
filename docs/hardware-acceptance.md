@@ -125,14 +125,23 @@ cases below remain required for a release image.
 
 ## Browser/extension and evidence boundaries
 
-- `chrome://version` shows the exact v0.4.1 packaged executable/arguments.
+- `chrome://version` shows the Chromium version pinned in `manifest.json`
+  (currently `153.0.8010.47`) and the expected packaged executable/arguments.
   `chrome://sandbox` confirms normal sandboxing; no root/no-sandbox/debug port.
 - Reviewed MV3 extension loads from root-owned `/opt/gfn-pi-compat`; test true
   HEVC capability with support present and deliberately absent.
 - Confirm real provider login without certificate bypasses or entitlement
   spoofing. An extension cannot grant a service tier/region capability.
 
-Separate evidence already exists for packaged browser v0.4.1, BuildID
+The current [Chromium release](https://github.com/sslivins/chromium-rpi-hevc/releases/tag/chromium-153.0.8010.47-2-rpt1-hevc1)
+reports seven passing keyboard tests and five short **1080p30** Pi100 HEVC
+fixtures (Main, Main10, HDR10 and 8/10-bit weighted prediction), with BuildID
+`867bc3b5326c5dc3b24d964a441cbe2df37ad212`. The HDR10 fixture recorded ten
+dropped frames; these are decode-correctness checks, not performance evidence.
+This does not establish Cloudplay CM5 interactive gameplay, 4K decoding or HDR
+display output. Repeat the matrix below on the upgraded Cloudplay image.
+
+Historical evidence also exists for packaged browser v0.4.1, BuildID
 `ead10187a8df80ef5b7683ad3e113baef22016cb`: seven keyboard tests and five
 local **1080p30** HEVC fixture/image/motion tests passed as sandboxed UID1000,
 with V4L2 logs/device descriptors and the pre-keymap guard exercised on each

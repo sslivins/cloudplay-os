@@ -29,7 +29,8 @@ def validate(lock, allow_unset=False):
     browser = lock["browser"]
     if browser["repository"] != "sslivins/chromium-rpi-hevc":
         raise ValueError("Unexpected browser repository")
-    require(browser["release"], r"v[0-9]+\.[0-9]+\.[0-9]+")
+    require(browser["release"], r"(?:v[0-9]+\.[0-9]+\.[0-9]+|"
+            r"chromium-[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-rpt[0-9]+-hevc[0-9]+)")
     require(browser["version"], r"[0-9A-Za-z.+~-]+")
     require(browser["package_version"], r"(?:[0-9]+:)?[0-9][0-9A-Za-z.+:~\-]*")
     expected = {

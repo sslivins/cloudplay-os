@@ -88,15 +88,38 @@ class PinsTest(unittest.TestCase):
     def test_finalized_manifest(self):
         artifacts.validate(self.finalized())
 
+    def test_versioned_browser_release_tags(self):
+        for tag in ("v0.4.1", "chromium-153.0.8010.47-2-rpt1-hevc1"):
+            value = self.finalized()
+            value["browser"]["release"] = tag
+            with self.subTest(tag=tag):
+                artifacts.validate(value)
+
+    def test_floating_or_unsafe_browser_release_tags_rejected(self):
+        for tag in ("main", "latest", "v0.4", "../v0.4.1", "v0.4.1/other",
+                    "chromium-153", "chromium-153.0.8010.47-2-rpt1",
+                    "chromium-153.0.8010.47-2-rpt1-hevc1?download=1",
+                    "chromium-153.0.8010.47-2-rpt1-hevc1\n"):
+            value = self.finalized()
+            value["browser"]["release"] = tag
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                artifacts.validate(value)
+
     def test_package_version_is_distinct_from_asset_filename_version(self):
         value = self.finalized()
-        self.assertEqual(value["browser"]["package_version"], "1:152.0.7977.82-1~deb13u1+rpt2")
+        self.assertEqual(value["browser"]["package_version"], "1:153.0.8010.47-2~deb13u1+rpt1")
         self.assertNotEqual(value["browser"]["package_version"], value["browser"]["version"])
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         self.assertIn('lock["browser"]["package_version"]', stage)
         value["browser"]["package_version"] = "bad version"
         with self.assertRaises(ValueError):
             artifacts.validate(value)
+
+    def test_export_report_uses_browser_manifest_pins(self):
+        source = (ROOT / "scripts/verify-kiosk.py").read_text()
+        self.assertIn('Path("/opt/cloudplay-build-inputs/manifest.json").read_text()', source)
+        self.assertIn('"browser_release": browser["release"]', source)
+        self.assertIn('"browser_package_version": browser["package_version"]', source)
 
     def test_floating_or_partial_extension_rejected(self):
         for commit in ("main", "v1.0", "abcdef0", "a" * 39):
