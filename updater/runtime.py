@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import threading
 import time
 import uuid
@@ -14,7 +15,7 @@ from .artifacts import (ArtifactError, GENERATED_PATHS, SemVer, sha256_file,
                         verify_bundle)
 from .discovery import Discovery, DiscoveryError
 from .platform import LinuxPlatform
-from .state import Config, Journal, UpdateError, fail, read_json, trusted_path
+from .state import Config, Journal, UpdateError, fail, read_json, sync_directory, trusted_path
 
 COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"})
 DESTRUCTIVE = frozenset({"invalidating", "staging_boot", "staging_root",
@@ -191,6 +192,58 @@ class Runtime:
         if self.cancelled.is_set():
             fail("CANCELLED", "update cancelled before destructive staging")
 
+    def _create_staging(self):
+        base = self.journal.directory
+        trusted_path(base, directory=True)
+        if self.journal.load().get("staging") is not None:
+            fail("STAGING", "previous workspace requires cleanup before another attempt")
+        path = base / ("release-" + uuid.uuid4().hex)
+        if path.exists() or path.is_symlink():
+            fail("STAGING", "new workspace already exists; refusing to adopt it")
+        record = dict(name=path.name, parent_inode=base.stat().st_ino, inode=None)
+        self.journal.update(staging=record)
+        path.mkdir(mode=0o700)
+        sync_directory(base)
+        record["inode"] = path.lstat().st_ino
+        self.journal.update(staging=record)
+        return path
+
+    def _cleanup_staging(self):
+        # Only an explicitly recorded attempt is ours; never sweep release-*.
+        record = self.journal.load().get("staging")
+        if record is None:
+            return
+        base = self.journal.directory
+        trusted_path(base, directory=True)
+        if base.stat().st_ino != record["parent_inode"]:
+            fail("STAGING", "workspace parent identity changed; operator recovery required")
+        path = base / record["name"]
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            info = None
+        if info is not None:
+            if (record["inode"] is None or not stat.S_ISDIR(info.st_mode)
+                    or info.st_ino != record["inode"] or info.st_dev != base.stat().st_dev):
+                fail("STAGING", "workspace identity is unbound or changed; operator recovery required")
+            if os.name == "posix":
+                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+                    fail("STAGING", "workspace is not owned privately by the updater")
+                # Device checks alone miss same-filesystem bind mounts.
+                for line in Path("/proc/self/mountinfo").read_text().splitlines():
+                    fields = line.split()
+                    if len(fields) < 10:
+                        fail("STAGING", "cannot validate workspace mount boundaries")
+                    mount = Path(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4]))
+                    if mount.is_relative_to(path.absolute()):
+                        fail("STAGING", "workspace contains a mount; operator recovery required")
+                if not shutil.rmtree.avoids_symlink_attacks:
+                    fail("STAGING", "symlink-resistant workspace deletion is unavailable")
+            shutil.rmtree(path)
+        # Retain the record through partial deletion and failed durability writes.
+        sync_directory(base)
+        self.journal.update(staging=None)
+
     def install(self):
         self.config.mutation_gate()
         self.platform.inspect()
@@ -204,7 +257,7 @@ class Runtime:
             # exact mirror exemption; never mutate an ordinary signed file.
             if "boot/autoboot.txt" not in GENERATED_PATHS:
                 fail("ARTIFACT_CONTRACT", "boot/autoboot.txt closed generated exemption is required")
-            layout = self.platform.precheck()
+            layout = self.platform.inspect()
             if layout.active != state["last_good"]:
                 fail("SLOT", "not running the durable last-good slot")
             release = read_json(Path(self.config.release_file))
@@ -212,14 +265,17 @@ class Runtime:
             if release.get("version") != state["current_version"]:
                 fail("VERSION", "running release differs from durable current version")
             self.platform.verify_good(layout, state["last_good_identity"])
+            self._cleanup_staging()
+            checked = self.platform.precheck()
+            if (checked.active, checked.target) != (layout.active, layout.target):
+                fail("LAYOUT_CHANGED", "mounted slots changed during install prechecks")
             self.cancelled.clear()
             self._destructive = False
-            staging = Path(self.config.state_dir) / ("release-" + uuid.uuid4().hex)
-            staging.mkdir(mode=0o700)
+            staging = self._create_staging()
             downloads, extracted = staging / "download", staging / "verified"
-            downloads.mkdir(mode=0o700)
             self._installing = True
             try:
+                downloads.mkdir(mode=0o700)
                 self.journal.update(phase="downloading", error=None, progress=None)
                 def progress(received, total):
                     self._report_progress("downloading", received, total)
@@ -270,12 +326,10 @@ class Runtime:
                 raise
             finally:
                 self._progress = None
-                # The path is exclusively generated under our private staging root.
-                # Never delete recovered/unknown directories automatically.
                 self._report_activity("finishing", "cleanup")
                 try:
-                    shutil.rmtree(staging)
-                except OSError as exc:
+                    self._cleanup_staging()
+                except ERRORS as exc:
                     self._error(exc)
                     raise
                 finally:
@@ -297,6 +351,7 @@ class Runtime:
             self._restarting = True
             try:
                 self.platform.verify_good(layout, state["last_good_identity"])
+                self._cleanup_staging()
                 self.platform.verify_candidate(
                     layout, pending, activity=lambda *args: self._report_activity("restarting", *args))
                 self._report_activity("restarting", "save_restart")

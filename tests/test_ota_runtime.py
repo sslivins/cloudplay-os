@@ -2,6 +2,7 @@ import copy
 from contextlib import contextmanager
 from dataclasses import replace
 import json
+import os
 import shutil
 from pathlib import Path
 import tempfile
@@ -161,6 +162,246 @@ class RuntimeTests(unittest.TestCase):
         self.trusted.start()
         self.addCleanup(self.trusted.stop)
 
+    def workspace(self, *, bound=True):
+        path = self.root / ("release-" + "a" * 32)
+        path.mkdir(mode=0o700)
+        (path / "payload").write_bytes(b"interrupted download")
+        record = dict(name=path.name, parent_inode=self.root.stat().st_ino,
+                      inode=path.stat().st_ino if bound else None)
+        self.runtime.journal.update(staging=record)
+        return path, record
+
+    def test_workspace_bound_before_download_and_cleared_after_cleanup(self):
+        download = self.runtime.discovery.download
+        def inspect_download(release, directory, *args, **kwargs):
+            record = self.runtime.journal.load()["staging"]
+            self.assertEqual(record["name"], directory.parent.name)
+            self.assertEqual(record["inode"], directory.parent.stat().st_ino)
+            return download(release, directory, *args, **kwargs)
+        self.runtime.discovery.download = inspect_download
+        self.runtime.install()
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_reservation_precedes_mkdir_and_binding_precedes_payload(self):
+        mkdir = Path.mkdir
+        def inspect_mkdir(path, *args, **kwargs):
+            if path.name.startswith("release-"):
+                record = self.runtime.journal.load()["staging"]
+                self.assertEqual(record["name"], path.name)
+                self.assertIsNone(record["inode"])
+            elif path.name == "download":
+                self.assertEqual(self.runtime.journal.load()["staging"]["inode"],
+                                 path.parent.stat().st_ino)
+            return mkdir(path, *args, **kwargs)
+        with patch.object(Path, "mkdir", new=inspect_mkdir):
+            self.runtime.install()
+
+    def test_reboot_preserves_workspace_until_retry_then_reclaims_before_precheck(self):
+        for phase in ("downloading", "verifying", "staging_root"):
+            with self.subTest(phase=phase):
+                self.runtime.journal.update(phase="available", pending=None)
+                self.runtime.install()
+                path, record = self.workspace()
+                self.runtime.journal.update(phase=phase)
+                restored = Runtime(self.config, platform=self.platform,
+                                   discovery=FakeDiscovery(), verifier=self.verifier)
+                with patch.object(restored, "_cleanup_staging",
+                                  side_effect=AssertionError("cleanup delayed boot")):
+                    self.assertEqual(restored.reconcile()["phase"], "failed")
+                state = restored.journal.load()
+                self.assertIsNone(state["pending"])
+                self.assertEqual(state["staging"], record)
+                self.assertEqual(state["highest_version"], self.meta["version"])
+                self.assertEqual(state["minimum_key_epoch"], 2)
+                self.assertTrue(path.exists())
+                restored.check()
+                precheck = self.platform.precheck
+                def check_after_cleanup():
+                    self.assertFalse(path.exists())
+                    self.assertIsNone(restored.journal.load()["staging"])
+                    self.assertEqual(self.platform.calls[-1], "verify_good")
+                    with self.assertRaisesRegex(UpdateError, "BUSY"):
+                        with restored.journal.operation():
+                            pass
+                    return precheck()
+                with patch.object(self.platform, "precheck", side_effect=check_after_cleanup):
+                    restored.install()
+                self.assertIsNone(restored.journal.load()["staging"])
+
+    def test_unknown_workspaces_and_other_state_survive_retry(self):
+        for name in ("release-unknown", "release-" + "b" * 32, "lab-assets", "profiles", "mounts"):
+            directory = self.root / name
+            directory.mkdir()
+            (directory / "keep").write_text("untouched")
+        self.runtime.install()
+        for name in ("release-unknown", "release-" + "b" * 32, "lab-assets", "profiles", "mounts"):
+            self.assertEqual((self.root / name / "keep").read_text(), "untouched")
+
+    def test_unused_reservation_can_be_cleared_but_existing_unbound_path_cannot(self):
+        path, record = self.workspace(bound=False)
+        with self.assertRaisesRegex(UpdateError, "unbound or changed"):
+            self.runtime.install()
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.assertTrue((path / "payload").exists())
+        self.assertNotIn("precheck", self.platform.calls)
+        shutil.rmtree(path)
+        self.runtime.install()
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_collision_is_never_adopted(self):
+        path, _ = self.workspace()
+        self.runtime.journal.update(staging=None)
+        with patch("updater.runtime.uuid.uuid4", return_value=Mock(hex="a" * 32)), \
+                self.assertRaisesRegex(UpdateError, "refusing to adopt"):
+            self.runtime.install()
+        self.assertTrue((path / "payload").exists())
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_binding_failure_leaves_unbound_empty_directory_and_no_download(self):
+        update = self.runtime.journal.update
+        def fail_binding(**changes):
+            if changes.get("staging", {}).get("inode") is not None:
+                raise OSError("binding write failed")
+            return update(**changes)
+        with patch.object(self.runtime.journal, "update", side_effect=fail_binding), \
+                patch.object(self.runtime.discovery, "download") as download, \
+                self.assertRaisesRegex(OSError, "binding write"):
+            self.runtime.install()
+        download.assert_not_called()
+        record = self.runtime.journal.load()["staging"]
+        self.assertIsNone(record["inode"])
+        self.assertEqual(list((self.root / record["name"]).iterdir()), [])
+
+    def test_reservation_failure_creates_no_workspace(self):
+        with patch.object(self.runtime.journal, "update", side_effect=OSError("reservation failed")), \
+                self.assertRaisesRegex(OSError, "reservation failed"):
+            self.runtime.install()
+        self.assertFalse(list(self.root.glob("release-*")))
+        self.assertIsNone(self.runtime.journal.load().get("staging"))
+
+    def test_directory_sync_failure_before_binding_never_downloads(self):
+        with patch("updater.runtime.sync_directory", side_effect=OSError("mkdir fsync failed")), \
+                patch.object(self.runtime.discovery, "download") as download, \
+                self.assertRaisesRegex(OSError, "mkdir fsync failed"):
+            self.runtime.install()
+        download.assert_not_called()
+        record = self.runtime.journal.load()["staging"]
+        self.assertIsNone(record["inode"])
+        self.assertEqual(list((self.root / record["name"]).iterdir()), [])
+
+    def test_partial_cleanup_keeps_record_and_next_retry_completes(self):
+        path, record = self.workspace()
+        (path / "remaining").write_text("keep until retry")
+        def partial_cleanup(directory):
+            (directory / "payload").unlink()
+            raise OSError("injected deletion failure")
+        with patch("updater.runtime.shutil.rmtree", side_effect=partial_cleanup), \
+                self.assertRaisesRegex(OSError, "deletion failure"):
+            self.runtime.install()
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.assertTrue((path / "remaining").exists())
+        self.assertNotIn("precheck", self.platform.calls)
+        self.runtime.install()
+        self.assertFalse(path.exists())
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_cleanup_sync_failure_retains_record_even_after_directory_removed(self):
+        path, record = self.workspace()
+        with patch("updater.runtime.sync_directory", side_effect=OSError("fsync failed")), \
+                self.assertRaisesRegex(OSError, "fsync failed"):
+            self.runtime.install()
+        self.assertFalse(path.exists())
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.runtime.install()
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_record_clear_failure_retries_absent_workspace_idempotently(self):
+        path, record = self.workspace()
+        update = self.runtime.journal.update
+        def fail_clear(**changes):
+            if changes == {"staging": None}:
+                self.assertFalse(path.exists())
+                raise OSError("journal clear failed")
+            return update(**changes)
+        with patch.object(self.runtime.journal, "update", side_effect=fail_clear), \
+                self.assertRaisesRegex(OSError, "journal clear failed"):
+            self.runtime.install()
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.runtime.install()
+        self.assertIsNone(self.runtime.journal.load()["staging"])
+
+    def test_workspace_and_parent_identity_mismatch_refused(self):
+        path, record = self.workspace()
+        for field in ("inode", "parent_inode"):
+            self.runtime.journal.update(staging=dict(record, **{field: record[field] + 1}))
+            with self.subTest(field=field), self.assertRaisesRegex(UpdateError, "STAGING"):
+                self.runtime.install()
+            self.assertTrue((path / "payload").exists())
+
+    @unittest.skipUnless(os.name == "posix", "Linux symlink and mount protections")
+    def test_workspace_symlink_rejected_but_payload_links_are_not_followed(self):
+        path, record = self.workspace()
+        external = self.root / "external"
+        external.mkdir()
+        (external / "keep").write_text("untouched")
+        shutil.rmtree(path)
+        path.symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(UpdateError, "STAGING"):
+            self.runtime.install()
+        path.unlink()
+        path.mkdir(mode=0o700)
+        (path / "link").symlink_to(external, target_is_directory=True)
+        self.runtime.journal.update(staging=dict(record, inode=path.stat().st_ino))
+        self.runtime.install()
+        self.assertEqual((external / "keep").read_text(), "untouched")
+
+    @unittest.skipUnless(os.name == "posix", "Linux mount table")
+    def test_workspace_or_nested_same_device_mount_refused(self):
+        path, record = self.workspace()
+        for mount in (path, path / "nested"):
+            text = f"20 10 179:6 / {mount} rw - ext4 /dev/mmcblk0p6 rw\n"
+            with self.subTest(mount=mount), patch.object(Path, "read_text", return_value=text), \
+                    self.assertRaisesRegex(UpdateError, "contains a mount"):
+                self.runtime.install()
+            self.assertEqual(self.runtime.journal.load()["staging"], record)
+            self.assertTrue((path / "payload").exists())
+
+    @unittest.skipUnless(os.name == "posix", "Linux workspace permissions")
+    def test_nonprivate_workspace_is_not_removed(self):
+        path, record = self.workspace()
+        path.chmod(0o755)
+        with self.assertRaisesRegex(UpdateError, "owned privately"):
+            self.runtime.install()
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.assertTrue((path / "payload").exists())
+
+    def test_recovered_restart_requires_cleanup_before_candidate_readback(self):
+        self.runtime.install()
+        path, record = self.workspace()
+        with patch("updater.runtime.shutil.rmtree", side_effect=OSError("cleanup failed")), \
+                self.assertRaisesRegex(OSError, "cleanup failed"):
+            self.runtime.restart()
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.assertNotIn("verify_candidate", self.platform.calls)
+        self.assertNotIn(("reboot", True), self.platform.calls)
+        with patch.object(self.platform, "verify_candidate",
+                          side_effect=lambda *args, **kwargs: self.assertFalse(path.exists())):
+            self.runtime.restart()
+        self.assertIn(("reboot", True), self.platform.calls)
+
+    def test_candidate_health_and_rollback_do_not_wait_for_staging_cleanup(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        path, record = self.workspace()
+        with patch.object(self.runtime, "_cleanup_staging",
+                          side_effect=AssertionError("cleanup delayed candidate health")):
+            self.runtime.reconcile(boot_id="boot1")
+            self.runtime.health()
+            self.time = 700
+            self.runtime.health(deadline_only=True)
+        self.assertTrue(path.exists())
+        self.assertEqual(self.runtime.journal.load()["staging"], record)
+        self.assertIn(("reboot", False), self.platform.calls)
+
     def test_check_failure_preserves_context_and_retry_clears_error(self):
         with patch.object(self.runtime.discovery, "check",
                           side_effect=UpdateError("NETWORK", "Offline")):
@@ -265,6 +506,18 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn(("reboot", True), self.platform.calls)
         self.assertFalse(any(isinstance(call, tuple) and call[0] == "pointer"
                              for call in self.platform.calls))
+
+    def test_cleanup_identity_error_is_failed_not_restart_ready(self):
+        with patch.object(self.runtime, "_cleanup_staging", side_effect=[
+                None, UpdateError("STAGING", "workspace changed")]), \
+                self.assertRaisesRegex(UpdateError, "workspace changed"):
+            self.runtime.install()
+        status = self.runtime.status()
+        self.assertEqual(status["phase"], "failed")
+        self.assertFalse(status["can_restart"])
+        self.assertEqual(status["error"]["code"], "STAGING")
+        self.assertIsNotNone(self.runtime.journal.load()["staging"])
+        self.assertNotIn(("reboot", True), self.platform.calls)
 
     def test_service_failed_readback_leaves_explicit_finish_action(self):
         self.platform.fail_verify = True
@@ -664,6 +917,27 @@ class RuntimeTests(unittest.TestCase):
 
 
 class StateTests(unittest.TestCase):
+    def test_optional_staging_record_is_validated_and_preserved_by_updates(self):
+        with tempfile.TemporaryDirectory() as name:
+            journal = Journal(Path(name))
+            journal.initialize("1.0.0", "A", 1)
+            original = journal.load()
+            self.assertNotIn("staging", original)
+            record = dict(name="release-" + "a" * 32, parent_inode=123, inode=456)
+            for inode in (None, 456):
+                valid = dict(record, inode=inode)
+                journal.save(dict(original, staging=valid))
+                self.assertEqual(journal.update(notice="legacy update")["staging"], valid)
+            invalid = [[], {}, dict(record, name="../profiles"), dict(record, inode=True),
+                       dict(record, inode=0), dict(record, parent_inode=False),
+                       dict(record, parent_inode=-1), dict(record, extra="unknown")]
+            for value in invalid:
+                journal.save(dict(original, staging=value))
+                with self.subTest(value=value), self.assertRaisesRegex(UpdateError, "staging ownership"):
+                    journal.load()
+            journal.save(dict(original, staging=None))
+            self.assertIsNone(journal.load()["staging"])
+
     def test_corrupt_phase_or_boolean_schema_is_a_typed_error(self):
         with tempfile.TemporaryDirectory() as name:
             journal = Journal(Path(name))
