@@ -226,9 +226,11 @@ def drive_trusted(window, buttons, titles):
     elif step == 5:
         assert "SYSTEM UPDATES" in titles and not buttons
         assert updates.commands == ["check", "install"]
-        updates.status.update(phase="promoted", provider_launch_allowed=True)
+        check_timeline(window, 3)
+        updates.status.update(operation=dict(name="save_restart"))
         updates.changed = True
     elif step == 6:
+        check_timeline(window, 4)
         updates.status.update(phase="staging_root", provider_launch_allowed=False,
                               progress={"received": 5 * 1024**2, "total": 20 * 1024**2})
         updates.changed = True
@@ -319,6 +321,7 @@ def drive_trusted(window, buttons, titles):
         snapshot(window, "update-ready")
         buttons[-1].clicked()
         assert updates.commands == ["check", "install", "cancel", "restart"]
+        check_timeline(window, 3)
         assert not any(isinstance(w, Gtk.Label) and w.get_text() == "CONFIRM UPDATE"
                        for w in children_of(window)), "Recovery restart must not ask for confirmation twice"
         updates.status.update(phase="promoted", can_restart=False, provider_launch_allowed=True)

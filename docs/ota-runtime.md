@@ -231,6 +231,10 @@ recovery, and postboot verification are left uninterrupted.
 Both entry checks and manual checks immediately show "Checking for updates..."
 with a spinner, including while the request is queued or doing prechecks.
 Discovery does not show installation progress or the power-disconnection warning.
+The Check milestone includes the final pre-reboot verification, including when
+resuming with Finish Update. Restart becomes active only once verification has
+finished and the updater starts preparing the boot switch (`save_restart`).
+This grouping changes presentation only; all existing verification passes remain.
 Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
 The progress timeline is removed after promotion, including when reopening

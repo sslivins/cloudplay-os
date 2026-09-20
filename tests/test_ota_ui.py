@@ -407,6 +407,29 @@ class UpdatePresentationTests(unittest.TestCase):
         status.update(error=dict(command="close", code="SESSION"))
         self.assertIn("Reference: SESSION", ui.summary(status))
 
+    def test_restart_verification_stays_in_check_until_boot_switch(self):
+        for name in (None, "check_restart", "unrecognized"):
+            status = dict(phase="restarting",
+                          operation=dict(name=name, received=25, total=100))
+            self.assertEqual(ui.step_index(status), 3)
+            self.assertEqual(ui.journey(status)[3:], (("Check", "active"), ("Restart", "upcoming")))
+            self.assertEqual(ui.progress_detail(status), "Checking installed files")
+        status["operation"] = dict(name="save_restart")
+        self.assertEqual(ui.step_index(status), 4)
+        self.assertEqual(ui.journey(status)[3:], (("Check", "done"), ("Restart", "active")))
+        self.assertEqual(ui.progress_detail(status), "Getting ready to restart")
+
+    def test_finish_update_request_immediately_returns_to_check(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.status = dict(phase="ready_to_restart", can_restart=True,
+                             provider_launch_allowed=False)
+        for queued in (False, True):
+            client.active_command = "status" if queued else "restart"
+            client.queued_action = "restart" if queued else None
+            self.assertEqual(ui.step_index(client.display_status), 3)
+            self.assertEqual(ui.actions(client.display_status), [])
+
     def test_version_header_is_separate_from_task_status(self):
         status = dict(phase="verifying", current_version="0.1.0-beta.6",
                       available_version="0.1.0-beta.7",
