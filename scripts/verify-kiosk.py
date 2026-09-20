@@ -21,6 +21,16 @@ def effective_journal_settings(text):
     return dict(config["Journal"])
 
 
+def verify_browser_policy(path=Path("/etc/chromium/policies/managed/cloudplay.json")):
+    info = path.lstat()
+    assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022, path
+    policy = json.loads(path.read_text())
+    assert policy.get("PasswordManagerEnabled") is False, "Browser password saving must be disabled"
+    assert policy.get("ClipboardAllowedForUrls") == ["https://play.geforcenow.com"], \
+        "Clipboard permission must be limited to the GeForce NOW origin"
+    return {"new_password_saving": False, "clipboard_allowed_origins": policy["ClipboardAllowedForUrls"]}
+
+
 def verify_boot_order():
     targets = ["graphical.target"]
     if Path("/etc/cloudplay/ota-enabled").exists():
@@ -88,6 +98,7 @@ def effective_ssh(command="/usr/sbin/sshd", extra=()):
 
 
 def main():
+    browser_policy = verify_browser_policy()
     import pwd
     installed = subprocess.check_output(
         ["dpkg-query", "-W", "-f=${binary:Package}\t${db:Status-Status}\n"], text=True)
@@ -318,7 +329,7 @@ def main():
         "development_login": "cloud / cloud (public, temporary)" if development_ssh else None,
         "desktop_wizard_absent": True,
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
-        "browser_release": "v0.4.1", "plymouth_theme": "cloudplay",
+        "browser_release": "v0.4.1", "browser_policy": browser_policy, "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "home": "native GTK Wayland; owner-only Unix control; fixed per-service user cgroup",
         "home_ui_smoke": home_smoke,

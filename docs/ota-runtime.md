@@ -451,7 +451,13 @@ throttling status before download/staging.
    both firmware entrypoints are absent **before changing target root**.
 3. Copy inactive profiles from the stopped active profiles using `cp -a`
    (numeric IDs, xattrs and links), flush, then publish the per-slot copy.
-   Reject special files and escaping profile links. A partial `.new` snapshot
+   Reject special files and escaping profile links except browser-owned
+   `SingletonLock`, `SingletonCookie`, and `SingletonSocket` symlinks directly
+   inside the known `chromium-profile` and `xbox-profile` directories. Chromium
+   may leave these runtime locks after stopping. Copy them without following
+   their targets, then omit them from the new snapshot after rechecking browser
+   inactivity; preserve the original last-good profile and all sign-in data.
+   A partial `.new` snapshot
    is a visible operator-cleanup error, never an implicit reuse.
 4. Under a logind shutdown/sleep inhibitor, recreate inactive FAT and ext4;
    copy directories/files first, symlinks last. Preserve signed root modes and

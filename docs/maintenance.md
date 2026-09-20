@@ -427,6 +427,15 @@ recompile Chromium. No automatic browser updater or maximum-age gate exists.
 
 The browser profile is 0700 but is not encrypted at rest. `--password-store=basic`
 avoids an impossible desktop-keyring unlock prompt on a locked kiosk account.
+This is not a protected credential vault. The root-owned managed Chromium policy
+`/etc/chromium/policies/managed/cloudplay.json` sets `PasswordManagerEnabled=false`,
+disabling new password saving and the save-password prompt in both service
+profiles and onboarding. Existing saved passwords are not erased by this policy.
+It does not clear cookies, sign users out, or encrypt persisted sessions.
+The same policy sets `ClipboardAllowedForUrls` to exactly
+`https://play.geforcenow.com`. This pre-authorizes that site's clipboard permission
+without a repeated prompt, including reading copied text/images. It does not
+allow other sites, subdomains, or HTTP origins, nor does it add clipboard storage.
 Physical access exposes the persistent NVIDIA session. Kiosk mode is UI, not
 a browser navigation security boundary. Never use root or disable sandboxing.
 

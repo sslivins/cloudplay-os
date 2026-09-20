@@ -105,7 +105,12 @@ For logs, access controls and recovery, see [maintenance](docs/maintenance.md).
 - 4K and HDR are development targets, not advertised working features.
   Decoding HDR-encoded video does not establish HDR output to the display.
 - Service sign-in persists locally. Browser data is not encrypted at rest;
-  protect physical access to the card.
+  protect physical access to the card. Managed browser policy disables saving
+  new passwords and its save-password prompt; existing saved passwords are not
+  erased, and session-cookie persistence is unchanged.
+- Clipboard access is pre-authorized only for `https://play.geforcenow.com` to
+  avoid its permission popup. That site can read copied text/images without
+  another prompt; other sites retain normal permission handling.
 - OTA is experimental; there is no supported OTA-capable download yet.
   [A/B development images](docs/ota-images.md) require a deliberate reflash,
   signed trust configuration, and additional safety acceptance. The published

@@ -15,9 +15,14 @@ remote-debugging switches. The normal Chromium sandbox remains enabled.
 
 Anyone with physical access can use the persisted service/browser sessions.
 Browser profiles are private to cloudplay (0700) but are NOT encrypted at rest.
-The basic browser password store avoids a desktop keyring unlock dialog; do not
-save unrelated passwords. Kiosk mode is an appliance UI, not an isolation or
+The basic browser password store avoids a desktop keyring unlock dialog but is
+not a protected credential vault. Managed policy disables saving new passwords
+and the save-password prompt. It does not erase previously saved passwords or
+session cookies. Kiosk mode is an appliance UI, not an isolation or
 browser navigation security boundary. Protect the device and removable media.
+Clipboard permission is pre-authorized only for https://play.geforcenow.com.
+That site can read copied text/images without asking again; other websites keep
+normal permission handling. No clipboard archive or synchronization is added.
 
 Home and leave confirmation are native, unprivileged Wayland windows.
 The host shortcut uses an owner-only Unix socket, not a website-accessible HTTP
