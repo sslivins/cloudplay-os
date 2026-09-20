@@ -101,6 +101,11 @@ ownership, group restrictions and compositor binding. A headless labwc run
 exercises the real GTK menu with synthetic services (never provider sign-in);
 an explicit success record is required even if labwc exits zero after a failed
 session client. `tests/test_launcher.py` covers IPC, lifecycle and input logic.
+The native smoke driver waits for synthetic update responses and status changes
+to be consumed by the UI instead of assuming they complete before its next
+timer tick. Trusted-mode fixtures deliberately delay both the initial status
+and first check response. Screen assertions remain strict, and the existing
+12-second deadline fails stalled tests with the step and pending-response state.
 On Linux, `CLOUDPLAY_SYSTEMD_TEST=1 python3 -m unittest discover -s tests -p
 'test_launcher.py'` additionally tests real user-cgroup cleanup with a uniquely
 named synthetic unit. This does not prove Pi seat focus, controller mappings,

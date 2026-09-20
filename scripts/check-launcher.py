@@ -89,6 +89,12 @@ class Updates:
         if trusted_mode:
             self.status = {"phase": "unknown"}
         self.check_reply = False
+        # Exercise replies later than the driver's first 150 ms assertion tick.
+        self.initial_status_polls = 4 if trusted_mode else 0
+        self.initial_check_polls = 4 if trusted_mode else 0
+
+    def pending(self):
+        return self.initial_status is not None or self.check_reply or self.changed
 
     def submit(self, command):
         self.commands.append(command)
@@ -116,9 +122,15 @@ class Updates:
 
     def poll(self):
         if self.initial_status is not None:
+            if self.initial_status_polls:
+                self.initial_status_polls -= 1
+                return False
             self.status, self.initial_status = self.initial_status, None
             self.changed = True
         elif self.check_reply:
+            if self.initial_check_polls:
+                self.initial_check_polls -= 1
+                return False
             self.check_reply = False
             self.active_command = None
             self.changed = True
@@ -512,6 +524,8 @@ def drive_updates(window, children, buttons, titles):
 def drive():
     global step, done
     try:
+        if updates is not None and updates.pending():
+            return True
         window, = [w for w in Gtk.Window.list_toplevels() if w.get_title() == "Cloudplay Home"]
         children = children_of(window)
         titles = [w.get_text() for w in children if isinstance(w, Gtk.Label)]
@@ -587,13 +601,19 @@ def drive():
         step += 1
         return True
     except BaseException as error:
+        error.add_note(f"Native smoke step={step}, trusted={trusted_mode}, updates={update_mode}")
         errors.append(error)
         Gtk.main_quit()
         return False
 
 
 def timeout():
-    errors.append(RuntimeError("Native UI smoke test timed out"))
+    state = (f"phase={updates.status.get('phase')}, "
+             f"initial_status_pending={updates.initial_status is not None}, "
+             f"check_reply_pending={updates.check_reply}, changed={updates.changed}"
+             if updates is not None else "no update client")
+    errors.append(RuntimeError(
+        f"Native UI smoke test timed out at step {step}: {state}"))
     Gtk.main_quit()
     return False
 
