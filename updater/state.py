@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import stat
 import threading
 import time
@@ -239,6 +240,16 @@ class Journal:
                 fail("STATE", "invalid journal identity/floors")
             if SemVer.parse(value["highest_version"]) < SemVer.parse(value["current_version"]):
                 fail("STATE", "highest accepted version is below current version")
+            staging = value.get("staging")
+            if staging is not None:
+                if (not isinstance(staging, dict)
+                        or set(staging) != {"name", "parent_inode", "inode"}
+                        or not isinstance(staging["name"], str)
+                        or not re.fullmatch(r"release-[0-9a-f]{32}", staging["name"])
+                        or type(staging["parent_inode"]) is not int or staging["parent_inode"] <= 0
+                        or (staging["inode"] is not None
+                            and (type(staging["inode"]) is not int or staging["inode"] <= 0))):
+                    fail("STATE", "invalid staging ownership record")
             pending = value["pending"]
             if pending is not None:
                 if (not isinstance(pending, dict) or pending.get("slot") not in ("A", "B")

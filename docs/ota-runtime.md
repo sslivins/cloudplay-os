@@ -418,6 +418,38 @@ Cancellation can be requested during download/verification; artifact verificatio
 may finish its bounded subprocess before the cancellation is observed.
 Cancellation is serialized against the first invalidation and refused afterward.
 
+The optional schema-1 `staging` record owns exactly one generated
+`release-<32 lowercase hex>` directory beneath the private state directory.
+An install durably reserves that name and parent inode before creating the
+directory, syncs the parent, then durably binds the directory inode before
+writing any download or extracted payload. Existing schema-1 journals without
+this field remain valid; older updaters preserve but do not act on it.
+
+Under the operation and provider locks, the next install verifies last-good
+and reclaims a recorded workspace before the write probe or another download.
+Normal completion/failure and an explicit recovered restart use the same
+cleanup. Cleanup checks trusted ancestry, directory ownership, private mode,
+parent/directory identity and filesystem boundaries. It rejects mounts anywhere
+under the workspace, including same-filesystem bind mounts, and uses Linux's
+symlink-resistant tree removal without following extracted payload links.
+Unknown `release-*` directories, profiles, lab assets and mount work areas are
+never swept. Privileged mount changes must not run concurrently with cleanup.
+
+The record is cleared only after removal and parent-directory fsync. Partial
+deletion or a failed durability write leaves it available for an idempotent
+retry, including when the directory is already absent. If power fails between
+directory creation and identity binding, no payload has been allowed; an
+existing unbound directory is an explicit operator-recovery error, not silently
+adopted. Reconciliation preserves the record but does not walk/delete the tree:
+candidate health, promotion and rollback deadlines never wait for large cleanup.
+
+Beta.20 and earlier did not persist workspace ownership. Their abandoned
+directories need separately verified, exact-path operator cleanup before an
+old installer can retry when space is insufficient; installing this fix does
+not authorize deleting those untracked directories. Preserve diagnostic evidence,
+verify there is no active operation and protect both installed slots and profiles.
+Never clear version/key floors or delete a `release-*` wildcard to recover space.
+
 Physical layout validation derives disk ancestry from the actual mounted `/`,
 `/boot/firmware` and `/data` major:minor identities, verifies sysfs partition
 numbers, the same physical parent disk, six-entry GPT geometry, types, names,
