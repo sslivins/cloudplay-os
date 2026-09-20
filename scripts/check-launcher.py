@@ -187,6 +187,7 @@ def drive_trusted(window, buttons, titles):
     assert not browser.starts, "Trusted session started a browser"
     if step == 0:
         assert "SYSTEM UPDATES" in titles and len(buttons) == 3
+        buttons[0].grab_focus()
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_Return)
     elif step == 1:
@@ -231,7 +232,7 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 6:
         check_timeline(window, 4)
-        updates.status.update(phase="staging_root", provider_launch_allowed=False,
+        updates.status.update(phase="staging_root", provider_launch_allowed=False, operation=None,
                               progress={"received": 5 * 1024**2, "total": 20 * 1024**2})
         updates.changed = True
     elif step == 7:
