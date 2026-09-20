@@ -143,7 +143,7 @@ def version_text(status):
         if status.get("phase") == "available":
             return f"Cloudplay OS {target} is available"
         return f"Updating Cloudplay OS to {target}"
-    return "Cloudplay OS"
+    return f"Cloudplay OS {current}" if current else "Cloudplay OS"
 
 
 def request(command):
@@ -285,7 +285,7 @@ def summary(status, *, include_progress=True):
         "ready_to_restart": "Select Finish Update to complete the update. Cloudplay will check the files and restart.",
         "restarting": "Rechecking the installed files before restart. Do not disconnect from power.",
         "tryboot_running": "Checking the updated system...",
-        "promoted": "Update complete. Cloudplay is ready to play.",
+        "promoted": "Check for updates",
         "rolled_back": "The update couldn't start. You're back on your previous version.",
         "failed": "The update could not be completed.",
         "disabled": "Updates aren't available on this installation.",

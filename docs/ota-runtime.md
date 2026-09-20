@@ -219,8 +219,12 @@ separators or "step N of 5" captions. The target remains above the timeline inst
 of appearing inside task status. The thicker, rounded task bar shows only a
 percentage, without byte counts or explanatory progress disclaimers.
 Percentages describe only the named task, never an estimated fraction of the
-entire update. Only `promoted` is presented as
-"Update complete". Confirmations describe gaming availability and warn
+entire update. The durable `promoted` state confirms a successful installation,
+but its resting screen says "Check for updates", not a persistent completion
+announcement or a claim that no newer release exists. A fresh successful check
+is required to say the device is up to date. When no different target version is
+being offered or installed, the header shows the installed Cloudplay OS version.
+Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
 The progress timeline is removed after promotion, including when reopening
 System Updates later; a completed update must not leave old milestone check marks.
