@@ -380,6 +380,10 @@ class Updates:
     @property
     def display_status(self):
         command = self.queued_action or self.active_command
+        if command == "check":
+            return dict(self.status, phase="checking", install_enabled=False,
+                        can_cancel=False, can_restart=False, available_version=None,
+                        candidate_version=None, progress=None, operation=None, error=None)
         if command in ("install", "close"):
             return dict(self.status, phase="starting" if command == "install" else "returning",
                         install_enabled=False,
@@ -395,6 +399,8 @@ class Updates:
         if self.pending:
             if self.active_command == "status" and command != "status" and self.queued_action is None:
                 self.queued_action = command
+                if command == "check":
+                    self.error = ""
                 return True
             return False
         if command == "dismiss":
@@ -403,6 +409,8 @@ class Updates:
             return True
         self.pending = True
         self.active_command = command
+        if command == "check":
+            self.error = ""
         self.commands.put_nowait(command)
         return True
 

@@ -12,6 +12,26 @@ from updater.state import Config, UpdateError
 
 
 class ServiceTests(unittest.TestCase):
+    def test_accepted_check_is_visible_through_prechecks(self):
+        runtime = Mock(config=Config())
+        runtime.status.side_effect = lambda: dict(
+            phase="available", install_enabled=True, provider_launch_allowed=True,
+            available_version="1.1.0", error={"code": "NETWORK"})
+        service = Service(runtime)
+        service._command = "check"
+        service._worker_lock.acquire()
+        try:
+            status = service.status()
+            self.assertEqual(status["phase"], "checking")
+            self.assertFalse(status["install_enabled"])
+            self.assertTrue(status["provider_launch_allowed"])
+            self.assertIsNone(status["available_version"])
+            self.assertIsNone(status["error"])
+        finally:
+            service._worker_lock.release()
+        self.assertEqual(service.status()["phase"], "available")
+        self.assertEqual(service.status()["error"], {"code": "NETWORK"})
+
     def test_accepted_install_is_starting_before_runtime_changes_phase(self):
         runtime = Mock(config=Config())
         runtime.status.side_effect = lambda: dict(

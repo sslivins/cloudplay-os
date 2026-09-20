@@ -12,6 +12,48 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_check_feedback_is_immediate_even_when_queued_behind_status(self):
+        for queued in (False, True):
+            with self.subTest(queued=queued):
+                release = threading.Event()
+                def send(command):
+                    if not release.wait(3):
+                        raise TimeoutError("test request was not released")
+                    return dict(phase="checking")
+                client = ui.Updates(send)
+                self.addCleanup(client.close)
+                client.status = dict(phase="available", install_enabled=True,
+                                     current_version="1.0.0", available_version="1.1.0",
+                                     provider_launch_allowed=True)
+                client.error = "Previous connection failed"
+                if queued:
+                    client.submit("status")
+                try:
+                    self.assertTrue(client.submit("check"))
+                    self.assertEqual(client.error, "")
+                    self.assertEqual(client.display_status["phase"], "checking")
+                    self.assertEqual(ui.summary(client.display_status), "Checking for updates...")
+                    self.assertEqual(ui.version_text(client.display_status), "Cloudplay OS 1.0.0")
+                    self.assertEqual(ui.actions(client.display_status), [])
+                    self.assertFalse(client.submit("check"))
+                finally:
+                    release.set()
+
+    def test_check_feedback_clears_for_success_and_failure(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.status = dict(phase="idle", current_version="1.0.0")
+        for value, error in ((dict(phase="available", install_enabled=True), ""),
+                             (None, "Unable to check for updates.")):
+            with self.subTest(error=error):
+                client.pending, client.active_command = True, "check"
+                client.results.put((value, error))
+                self.assertTrue(client.poll())
+                self.assertNotEqual(client.display_status["phase"], "checking")
+                self.assertEqual(client.error, error)
+                self.assertIn(("Check for Updates", "check"), ui.actions(client.display_status))
+
     def test_install_hides_offer_until_acknowledged_including_queued_poll(self):
         for queued in (False, True):
             with self.subTest(queued=queued):

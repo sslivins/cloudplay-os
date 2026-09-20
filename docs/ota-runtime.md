@@ -224,6 +224,13 @@ but its resting screen says "Check for updates", not a persistent completion
 announcement or a claim that no newer release exists. A fresh successful check
 is required to say the device is up to date. When no different target version is
 being offered or installed, the header shows the installed Cloudplay OS version.
+Entering System Updates starts one fresh discovery check after the first known
+status arrives. Reopening it from Settings checks again; status refreshes and
+returning from the install confirmation do not. Active installations, restart
+recovery, and postboot verification are left uninterrupted.
+Both entry checks and manual checks immediately show "Checking for updates..."
+with a spinner, including while the request is queued or doing prechecks.
+Discovery does not show installation progress or the power-disconnection warning.
 Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
 The progress timeline is removed after promotion, including when reopening
