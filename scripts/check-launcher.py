@@ -374,19 +374,21 @@ def drive_trusted(window, buttons, titles):
         buttons[-1].clicked()
     elif step == 24:
         assert "SETTINGS" in titles
-        updates.status.update(phase="tryboot_running", provider_launch_allowed=False)
+        updates.status.update(phase="tryboot_running", provider_launch_allowed=False,
+                              error=dict(code="HEALTH_NOT_READY", message="startup service is still starting"))
         buttons[0].clicked()
     elif step == 25:
         assert updates.commands.count("check") == 2
         assert not buttons
         assert "Finishing your update..." in titles
+        assert not any("problem continues" in text or "Reference:" in text for text in titles)
         assert "Waiting for progress..." not in titles
         assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
         header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
         assert not header.get_visible()
         assert "close" not in updates.commands
         snapshot(window, "update-postboot-finishing")
-        updates.status.update(phase="promoting")
+        updates.status.update(phase="promoting", error=None)
         updates.changed = True
     elif step == 26:
         assert "Finishing your update..." in titles and not buttons

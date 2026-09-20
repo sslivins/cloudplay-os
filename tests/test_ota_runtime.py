@@ -470,6 +470,24 @@ class RuntimeTests(unittest.TestCase):
         self.time = 120
         self.assertEqual(self.runtime.health()["phase"], "promoted")
 
+    def test_starting_service_retains_diagnostics_and_resets_health_window(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        self.runtime.health()
+        deadline = self.runtime.journal.load()["pending"]["deadline"]
+        self.time = 109
+        with patch.object(self.platform, "health",
+                          side_effect=UpdateError("HEALTH_NOT_READY", "startup service is activating")):
+            status = self.runtime.health()
+        self.assertEqual(status["phase"], "tryboot_running")
+        self.assertEqual(status["error"]["code"], "HEALTH_NOT_READY")
+        pending = self.runtime.journal.load()["pending"]
+        self.assertIsNone(pending["healthy_since"])
+        self.assertIsNone(pending["last_health_check"])
+        self.assertEqual(pending["deadline"], deadline)
+        self.time = 110
+        self.assertIsNone(self.runtime.health()["error"])
+        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 110)
+
     def test_health_waits_for_deadline_probe_lock(self):
         self.test_candidate_recognized_without_dt_tryboot()
         held, release = threading.Event(), threading.Event()

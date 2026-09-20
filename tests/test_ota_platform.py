@@ -57,6 +57,14 @@ class PlatformTests(unittest.TestCase):
                 patch.object(Path, "lstat", info), \
                 patch("updater.platform.atomic_write"), patch.object(Path, "unlink"):
             self.assertEqual(platform.health(pending, now=100).active, "B")
+            for unit_state, code in (("activating", "HEALTH_NOT_READY"),
+                                     ("inactive", "HEALTH_NOT_READY"), ("failed", "HEALTH")):
+                with self.subTest(unit_state=unit_state):
+                    platform.run.return_value = SimpleNamespace(stdout=unit_state)
+                    with self.assertRaises(UpdateError) as raised:
+                        platform.health(pending, now=100)
+                    self.assertEqual(raised.exception.code, code)
+            platform.run.return_value = SimpleNamespace(stdout="active")
             for name in ages:
                 with self.subTest(name=name):
                     ages[name] = 5.1

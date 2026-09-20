@@ -235,6 +235,11 @@ The Check milestone includes the final pre-reboot verification, including when
 resuming with Finish Update. Restart becomes active only once verification has
 finished and the updater starts preparing the boot switch (`save_restart`).
 This grouping changes presentation only; all existing verification passes remain.
+During tentative postboot checks, services still activating or inactive are
+reported as `HEALTH_NOT_READY` in diagnostics. The screen keeps "Finishing your
+update..." during this retryable startup wait, without troubleshooting advice.
+Failed services and other health errors remain visible, as do terminal rollback
+and recovery errors. Health retries, stabilization resets, and deadlines are unchanged.
 Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
 The progress timeline is removed after promotion, including when reopening

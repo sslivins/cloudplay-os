@@ -94,6 +94,20 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertEqual(ui.summary(dict(phase=phase)), "Finishing your update...")
             self.assertEqual(ui.progress_text(dict(phase=phase)), "")
 
+    def test_postboot_service_startup_wait_does_not_flash_troubleshooting(self):
+        error = dict(code="HEALTH_NOT_READY", message="startup service is still starting")
+        status = dict(phase="tryboot_running", error=error)
+        self.assertEqual(ui.summary(status), "Finishing your update...")
+        self.assertEqual(status["error"], error)
+        for phase, code in (("failed", "HEALTH_NOT_READY"),
+                            ("rolled_back", "HEALTH_NOT_READY"),
+                            ("recovery_required", "HEALTH_NOT_READY"),
+                            ("tryboot_running", "HEALTH"),
+                            ("tryboot_running", "SIGNATURE")):
+            with self.subTest(phase=phase, code=code):
+                self.assertIn("Reference: " + code,
+                              ui.summary(dict(phase=phase, error=dict(code=code))))
+
     def test_menu_transition_does_not_flash_completed_update_actions(self):
         client = ui.Updates(lambda command: {})
         self.addCleanup(client.close)

@@ -295,7 +295,9 @@ def summary(status, *, include_progress=True):
     lines = [progress_detail(status) if phase in BUSY and phase != "checking" else text]
     if include_progress and progress_counts(status) is not None:
         lines.append(progress_text(status))
-    if error:
+    startup_wait = (phase == "tryboot_running" and isinstance(error, dict)
+                    and error.get("code") == "HEALTH_NOT_READY" and not error.get("command"))
+    if error and not startup_wait:
         lines.append(error_detail(error))
     notes = status.get("notes")
     if isinstance(notes, str) and notes.strip() and phase == "available":
