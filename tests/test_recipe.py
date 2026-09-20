@@ -5,6 +5,7 @@ import io
 import json
 import re
 import shutil
+import stat
 import struct
 import tarfile
 import tomllib
@@ -12,7 +13,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,6 +226,37 @@ class InputStagingTest(unittest.TestCase):
 
 
 class RecipeSafetyTest(unittest.TestCase):
+    def test_browser_password_saving_is_disabled_by_managed_policy(self):
+        policy_file = ROOT / "stage-cloudplay/00-appliance/files/cloudplay-browser-policy.json"
+        policy = json.loads(policy_file.read_text())
+        self.assertIs(policy["PasswordManagerEnabled"], False)
+        stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
+        self.assertIn('install -m 644 files/cloudplay-browser-policy.json '
+                      '"${ROOTFS_DIR}/etc/chromium/policies/managed/cloudplay.json"', stage)
+        path = Mock()
+        path.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0)
+        path.read_text.return_value = policy_file.read_text()
+        self.assertEqual(verifier.verify_browser_policy(path), {
+            "new_password_saving": False,
+            "clipboard_allowed_origins": ["https://play.geforcenow.com"]})
+        for value in (True, None, 0, "false"):
+            path.read_text.return_value = json.dumps({"PasswordManagerEnabled": value})
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                verifier.verify_browser_policy(path)
+        for origins in (None, [], ["*"], ["https://[*.]geforcenow.com"],
+                        ["http://play.geforcenow.com"],
+                        ["https://play.geforcenow.com", "https://www.xbox.com"]):
+            path.read_text.return_value = json.dumps({
+                "PasswordManagerEnabled": False, "ClipboardAllowedForUrls": origins})
+            with self.subTest(origins=origins), self.assertRaises(AssertionError):
+                verifier.verify_browser_policy(path)
+        path.read_text.return_value = policy_file.read_text()
+        for mode, uid in ((stat.S_IFREG | 0o666, 0), (stat.S_IFREG | 0o644, 1000),
+                          (stat.S_IFLNK | 0o777, 0)):
+            path.lstat.return_value = SimpleNamespace(st_mode=mode, st_uid=uid)
+            with self.subTest(mode=mode, uid=uid), self.assertRaises(AssertionError):
+                verifier.verify_browser_policy(path)
+
     def test_locked_kiosk_and_no_stock_wizard(self):
         config = (ROOT / "config").read_text()
         for expected in ("FIRST_USER_PASS=''", "DISABLE_FIRST_BOOT_USER_RENAME=0",

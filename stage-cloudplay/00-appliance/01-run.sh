@@ -10,6 +10,7 @@ install -d "${ROOTFS_DIR}/usr/local/lib/cloudplay" "${ROOTFS_DIR}/usr/local/bin"
     "${ROOTFS_DIR}/etc/systemd/journald.conf.d" \
     "${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d" \
     "${ROOTFS_DIR}/etc/udev/rules.d" \
+    "${ROOTFS_DIR}/etc/chromium/policies/managed" \
     "${ROOTFS_DIR}/usr/share/plymouth/themes/cloudplay"
 cp -a "${inputs}/." "${ROOTFS_DIR}/opt/cloudplay-build-inputs/"
 cp -a "${inputs}/onboarding" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
@@ -29,6 +30,7 @@ printf '%s\n' "${CLOUDPLAY_DEVELOPMENT_SSH:-1}" > "${ROOTFS_DIR}/etc/cloudplay/d
 install -m 755 "${inputs}/install-extension.py" "${inputs}/supervise.py" "${ROOTFS_DIR}/usr/local/lib/cloudplay/"
 install -m 755 "${inputs}/hdr-readiness.py" "${ROOTFS_DIR}/usr/local/bin/cloudplay-hdr-check"
 install -m 644 files/SECURITY.txt "${ROOTFS_DIR}/usr/local/share/cloudplay/"
+install -m 644 files/cloudplay-browser-policy.json "${ROOTFS_DIR}/etc/chromium/policies/managed/cloudplay.json"
 install -m 644 files/greetd.toml "${ROOTFS_DIR}/etc/greetd/config.toml"
 install -m 644 files/greetd-kiosk.conf "${ROOTFS_DIR}/etc/systemd/system/greetd.service.d/cloudplay.conf"
 install -m 644 files/labwc-rc.xml "${ROOTFS_DIR}/etc/cloudplay/labwc/rc.xml"
