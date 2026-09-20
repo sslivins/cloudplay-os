@@ -755,7 +755,10 @@ class LinuxPlatform:
                 or profile.stat().st_uid != self.config.browser_uid):
             fail("HEALTH", "persistent profile mapping/ownership invalid")
         for unit in HEALTH_UNITS:
-            if self.run(["systemctl", "is-active", unit], allowed=(0, 3)).stdout.strip() != "active":
+            unit_state = self.run(["systemctl", "is-active", unit], allowed=(0, 3)).stdout.strip()
+            if unit_state in ("activating", "inactive"):
+                fail("HEALTH_NOT_READY", f"{unit} is still starting ({unit_state})")
+            if unit_state != "active":
                 fail("HEALTH", f"{unit} is not active")
         current = time.monotonic() if now is None else now
         boot_id = self.boot_id()

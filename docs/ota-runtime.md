@@ -224,6 +224,22 @@ but its resting screen says "Check for updates", not a persistent completion
 announcement or a claim that no newer release exists. A fresh successful check
 is required to say the device is up to date. When no different target version is
 being offered or installed, the header shows the installed Cloudplay OS version.
+Entering System Updates starts one fresh discovery check after the first known
+status arrives. Reopening it from Settings checks again; status refreshes and
+returning from the install confirmation do not. Active installations, restart
+recovery, and postboot verification are left uninterrupted.
+Both entry checks and manual checks immediately show "Checking for updates..."
+with a spinner, including while the request is queued or doing prechecks.
+Discovery does not show installation progress or the power-disconnection warning.
+The Check milestone includes the final pre-reboot verification, including when
+resuming with Finish Update. Restart becomes active only once verification has
+finished and the updater starts preparing the boot switch (`save_restart`).
+This grouping changes presentation only; all existing verification passes remain.
+During tentative postboot checks, services still activating or inactive are
+reported as `HEALTH_NOT_READY` in diagnostics. The screen keeps "Finishing your
+update..." during this retryable startup wait, without troubleshooting advice.
+Failed services and other health errors remain visible, as do terminal rollback
+and recovery errors. Health retries, stabilization resets, and deadlines are unchanged.
 Confirmations describe gaming availability and warn
 "Do not disconnect from power.", not internal partitions or slots.
 The progress timeline is removed after promotion, including when reopening
@@ -240,13 +256,14 @@ come from the checked manifest, plus generated files and minus withheld entries
 where applicable. Copy completion still follows file fsync/attribute work.
 
 Opaque operations (signature tool, formatting, profile preservation, flushing,
-configuration, unmount and cleanup) have explicit labels and elapsed task time,
-with **no bouncing progress bar or fabricated percentage/ETA**. The active
+configuration, unmount and cleanup) have explicit labels and a spinning active
+milestone, with no elapsed timer or waiting-for-progress placeholder and
+**no bouncing progress bar or fabricated percentage/ETA**. The active
 milestone animates during measurable and opaque work, but not while waiting for
 an explicit recovery action, after completion, or when the status connection fails.
-Byte counters can
-pause while per-file synchronization or metadata checks finish; after 15 seconds
-without a new measurement the UI explicitly says it is waiting for the next result.
+Byte counters can pause while per-file synchronization or metadata checks finish.
+During these pauses the UI keeps the operation label, active spinner, and last
+measured percentage, without adding a "No new progress" warning.
 Elapsed/quiet times use the monotonic clock; responsiveness is not claimed to prove
 storage progress. A full byte count never bypasses remaining integrity checks,
 flushes, config-last publication, or health checks.

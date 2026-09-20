@@ -85,9 +85,18 @@ class Updates:
         self.active_command = None
         self.queued_action = None
         self.fail_close = False
+        self.initial_status = dict(self.status) if trusted_mode else None
+        if trusted_mode:
+            self.status = {"phase": "unknown"}
+        self.check_reply = False
 
     def submit(self, command):
         self.commands.append(command)
+        if command == "check":
+            self.active_command = command
+            self.check_reply = True
+            self.changed = True
+            return True
         if command == "install":
             self.active_command = command
             self.changed = True
@@ -106,6 +115,13 @@ class Updates:
         return True
 
     def poll(self):
+        if self.initial_status is not None:
+            self.status, self.initial_status = self.initial_status, None
+            self.changed = True
+        elif self.check_reply:
+            self.check_reply = False
+            self.active_command = None
+            self.changed = True
         changed, self.changed = self.changed, False
         return changed
 
@@ -176,14 +192,16 @@ def drive_trusted(window, buttons, titles):
     elif step == 1:
         assert "CONFIRM UPDATE" in titles and window.get_focus() == buttons[0]
         assert any("restart automatically" in text for text in titles)
+        assert any("Your Cloudplay device will restart automatically when the update is complete."
+                   in text for text in titles)
         assert any("Do not disconnect from power." in text for text in titles)
         assert not any("ask you to restart" in text for text in titles)
         snapshot(window, "update-confirmation")
-        assert updates.commands == []
+        assert updates.commands == ["check"]
         press(window, Gdk.KEY_space)
     elif step == 2:
         assert "SYSTEM UPDATES" in titles
-        assert updates.commands == []
+        assert updates.commands == ["check"]
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_KP_Enter)
         confirmation = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
@@ -191,7 +209,7 @@ def drive_trusted(window, buttons, titles):
         press(window, Gdk.KEY_Down)
         press(window, Gdk.KEY_space)
     elif step == 3:
-        assert updates.commands == ["install"] and not buttons
+        assert updates.commands == ["check", "install"] and not buttons
         assert "SYSTEM UPDATES" in titles and "CONFIRM UPDATE" not in titles
         assert updates.status["phase"] == "available"
         assert "Starting your update..." in titles
@@ -207,10 +225,12 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 5:
         assert "SYSTEM UPDATES" in titles and not buttons
-        assert updates.commands == ["install"]
-        updates.status.update(phase="promoted", provider_launch_allowed=True)
+        assert updates.commands == ["check", "install"]
+        check_timeline(window, 3)
+        updates.status.update(operation=dict(name="save_restart"))
         updates.changed = True
     elif step == 6:
+        check_timeline(window, 4)
         updates.status.update(phase="staging_root", provider_launch_allowed=False,
                               progress={"received": 5 * 1024**2, "total": 20 * 1024**2})
         updates.changed = True
@@ -260,7 +280,8 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 12:
         assert not progress_widgets["bar"].get_visible()
-        assert "Elapsed: 1:05" in titles
+        assert not any("Elapsed:" in text or "Waiting for progress" in text for text in titles)
+        assert not progress_widgets["bar"].get_visible()
         assert any("Saving system files" in text for text in titles)
         check_timeline(window, 3)
         snapshot(window, "update-storage-wait")
@@ -291,7 +312,7 @@ def drive_trusted(window, buttons, titles):
         assert any(isinstance(w, Gtk.Label) and w.get_text() == "Cancel Update"
                    for w in buttons[0].get_child().get_children())
         press(window, Gdk.KEY_Return)
-        assert updates.commands == ["install", "cancel"]
+        assert updates.commands == ["check", "install", "cancel"]
         updates.status.update(phase="ready_to_restart", can_restart=True, can_cancel=False,
                               provider_launch_allowed=False, operation=None)
         updates.changed = True
@@ -299,7 +320,8 @@ def drive_trusted(window, buttons, titles):
         check_timeline(window, 4, moving=False)
         snapshot(window, "update-ready")
         buttons[-1].clicked()
-        assert updates.commands == ["install", "cancel", "restart"]
+        assert updates.commands == ["check", "install", "cancel", "restart"]
+        check_timeline(window, 3)
         assert not any(isinstance(w, Gtk.Label) and w.get_text() == "CONFIRM UPDATE"
                        for w in children_of(window)), "Recovery restart must not ask for confirmation twice"
         updates.status.update(phase="promoted", can_restart=False, provider_launch_allowed=True)
@@ -313,11 +335,16 @@ def drive_trusted(window, buttons, titles):
         assert "SETTINGS" in titles and len(buttons) == 3
         updates.status.update(current_version="0.1.0-beta.4", available_version=None)
         buttons[0].clicked()
-        assert updates.status["phase"] == "promoted"
+        assert updates.commands == ["check", "install", "cancel", "restart", "check"]
+        spinner, = [w for w in children_of(window) if isinstance(w, Gtk.Spinner)]
+        assert spinner.get_property("active")
+        assert not any(isinstance(w, Gtk.ProgressBar) for w in children_of(window))
+        assert not any(isinstance(w, Gtk.Label) and "Do not disconnect" in w.get_text()
+                       for w in children_of(window))
         assert any(isinstance(w, Gtk.Label) and w.get_text() == "Cloudplay OS 0.1.0-beta.4"
                    for w in children_of(window))
         assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
-        assert any(isinstance(w, Gtk.Label) and w.get_text() == "Check for updates"
+        assert any(isinstance(w, Gtk.Label) and w.get_text() == "Checking for updates..."
                    for w in children_of(window))
         assert not any(isinstance(w, Gtk.Label) and "Update complete" in w.get_text()
                        for w in children_of(window))
@@ -331,7 +358,7 @@ def drive_trusted(window, buttons, titles):
         buttons[0].clicked()
     elif step == 20:
         assert any("Beta releases: Off" in text for text in titles)
-        assert updates.commands == ["install", "cancel", "restart", "disable_beta"]
+        assert updates.commands == ["check", "install", "cancel", "restart", "check", "disable_beta"]
         snapshot(window, "beta-releases-off")
         buttons[0].clicked()
     elif step == 21:
@@ -347,18 +374,21 @@ def drive_trusted(window, buttons, titles):
         buttons[-1].clicked()
     elif step == 24:
         assert "SETTINGS" in titles
-        updates.status.update(phase="tryboot_running", provider_launch_allowed=False)
+        updates.status.update(phase="tryboot_running", provider_launch_allowed=False,
+                              error=dict(code="HEALTH_NOT_READY", message="startup service is still starting"))
         buttons[0].clicked()
     elif step == 25:
+        assert updates.commands.count("check") == 2
         assert not buttons
         assert "Finishing your update..." in titles
+        assert not any("problem continues" in text or "Reference:" in text for text in titles)
         assert "Waiting for progress..." not in titles
         assert not any(isinstance(w, Gtk.Grid) for w in children_of(window))
         header, = [w for w in children_of(window) if w.get_style_context().has_class("update-version")]
         assert not header.get_visible()
         assert "close" not in updates.commands
         snapshot(window, "update-postboot-finishing")
-        updates.status.update(phase="promoting")
+        updates.status.update(phase="promoting", error=None)
         updates.changed = True
     elif step == 26:
         assert "Finishing your update..." in titles and not buttons
@@ -375,7 +405,8 @@ def drive_trusted(window, buttons, titles):
         assert updates.commands.count("close") == 1
         updates.changed = True
     elif step == 29:
-        assert updates.commands == ["install", "cancel", "restart", "disable_beta", "enable_beta", "close"]
+        assert updates.commands == ["check", "install", "cancel", "restart", "check",
+                                    "disable_beta", "enable_beta", "close"]
         buttons[-1].clicked()
     elif step == 30:
         assert "SETTINGS" in titles

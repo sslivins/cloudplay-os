@@ -243,6 +243,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     update_activity_text = None
     post_update_seen = False
     auto_return_attempted = False
+    check_updates_on_entry = False
     home_focus = 0
 
     def style(widget, *names):
@@ -374,7 +375,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
                     context.remove_class("done")
 
     def show(title, choices, note="", services=False, return_help=False, activity=False,
-             stages=()):
+             stages=(), checking=False):
         nonlocal updates_screen, settings_screen, beta_screen, beta_choices
         nonlocal update_confirmation, update_notice, settings_shortcut
         nonlocal update_message, update_progress, update_choices
@@ -414,6 +415,12 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             status.set_justify(Gtk.Justification.CENTER)
             box.pack_start(status, False, False, 0)
             update_message = status
+        if checking:
+            spinner = Gtk.Spinner()
+            spinner.set_size_request(pixels(32), pixels(32))
+            spinner.set_halign(Gtk.Align.CENTER)
+            spinner.start()
+            box.pack_start(spinner, False, False, 0)
         if activity:
             update_activity_text = style(Gtk.Label(), "status")
             box.pack_start(update_activity_text, False, False, 0)
@@ -547,15 +554,18 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             update_message.set_text(message)
 
     def open_updates():
+        nonlocal check_updates_on_entry
         if browser.service:
             return
         if updates is not None and not trusted_updates:
             submit_update("open")
         else:
+            check_updates_on_entry = True
             show_updates()
 
     def show_updates(note=""):
         nonlocal updates_screen, update_choices, post_update_seen, auto_return_attempted
+        nonlocal check_updates_on_entry
         if browser.service:
             return
         if updates is None:
@@ -565,6 +575,12 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             updates_screen = True
             return
         status = updates.display_status
+        if check_updates_on_entry and status.get("phase", "unknown") != "unknown":
+            check_updates_on_entry = False
+            if (status.get("phase") in ("idle", "available", "promoted", "failed", "rolled_back")
+                    and status.get("provider_launch_allowed") is True):
+                submit_update("check")
+                return
         post_update = trusted_updates and status.get("phase") in ("tryboot_running", "promoting", "returning")
         if trusted_updates and status.get("phase") in ("tryboot_running", "promoting"):
             post_update_seen = True
@@ -586,14 +602,15 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         else:
             choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
         message = note or updates.error or update_summary(status, include_progress=False)
-        activity = status.get("phase") in UPDATE_BUSY and not updates.error
+        checking = status.get("phase") == "checking" and not updates.error
+        activity = status.get("phase") in UPDATE_BUSY and not updates.error and not checking
         stages = () if post_update else journey(status)
-        choice_key = (tuple(choice[0] for choice in choices), activity, bool(stages), post_update)
+        choice_key = (tuple(choice[0] for choice in choices), activity, bool(stages), post_update, checking)
         if not updates_screen or choice_key != update_choices:
             focus = window.get_focus()
             old_action = (update_choices[0][buttons.index(focus)]
                           if updates_screen and update_choices and focus in buttons else None)
-            show("SYSTEM UPDATES", choices, message, activity=activity, stages=stages)
+            show("SYSTEM UPDATES", choices, message, activity=activity, stages=stages, checking=checking)
             updates_screen = True
             update_choices = choice_key
             if old_action in choice_key[0]:
@@ -618,7 +635,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if command == "install":
             note = ("You won't be able to play while the update installs.\n"
                     "This may take several minutes. Do not disconnect from power.\n"
-                    "Cloudplay will restart automatically to finish the update.")
+                    "Your Cloudplay device will restart automatically when the update is complete.")
             show("CONFIRM UPDATE",
                  [("Not Now", show_updates, "go-previous-symbolic", False),
                   ("Install Update", lambda: submit_update(command), "system-reboot-symbolic", False)], note)
@@ -793,6 +810,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     try:
         if trusted_updates and start_page == "beta":
             show_beta()
+        elif trusted_updates:
+            open_updates()
         else:
             home()
         GLib.timeout_add(50, tick)

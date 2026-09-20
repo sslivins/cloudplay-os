@@ -12,6 +12,48 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_check_feedback_is_immediate_even_when_queued_behind_status(self):
+        for queued in (False, True):
+            with self.subTest(queued=queued):
+                release = threading.Event()
+                def send(command):
+                    if not release.wait(3):
+                        raise TimeoutError("test request was not released")
+                    return dict(phase="checking")
+                client = ui.Updates(send)
+                self.addCleanup(client.close)
+                client.status = dict(phase="available", install_enabled=True,
+                                     current_version="1.0.0", available_version="1.1.0",
+                                     provider_launch_allowed=True)
+                client.error = "Previous connection failed"
+                if queued:
+                    client.submit("status")
+                try:
+                    self.assertTrue(client.submit("check"))
+                    self.assertEqual(client.error, "")
+                    self.assertEqual(client.display_status["phase"], "checking")
+                    self.assertEqual(ui.summary(client.display_status), "Checking for updates...")
+                    self.assertEqual(ui.version_text(client.display_status), "Cloudplay OS 1.0.0")
+                    self.assertEqual(ui.actions(client.display_status), [])
+                    self.assertFalse(client.submit("check"))
+                finally:
+                    release.set()
+
+    def test_check_feedback_clears_for_success_and_failure(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.next_poll = float("inf")
+        client.status = dict(phase="idle", current_version="1.0.0")
+        for value, error in ((dict(phase="available", install_enabled=True), ""),
+                             (None, "Unable to check for updates.")):
+            with self.subTest(error=error):
+                client.pending, client.active_command = True, "check"
+                client.results.put((value, error))
+                self.assertTrue(client.poll())
+                self.assertNotEqual(client.display_status["phase"], "checking")
+                self.assertEqual(client.error, error)
+                self.assertIn(("Check for Updates", "check"), ui.actions(client.display_status))
+
     def test_install_hides_offer_until_acknowledged_including_queued_poll(self):
         for queued in (False, True):
             with self.subTest(queued=queued):
@@ -51,6 +93,20 @@ class UpdatePresentationTests(unittest.TestCase):
         for phase in ("tryboot_running", "promoting"):
             self.assertEqual(ui.summary(dict(phase=phase)), "Finishing your update...")
             self.assertEqual(ui.progress_text(dict(phase=phase)), "")
+
+    def test_postboot_service_startup_wait_does_not_flash_troubleshooting(self):
+        error = dict(code="HEALTH_NOT_READY", message="startup service is still starting")
+        status = dict(phase="tryboot_running", error=error)
+        self.assertEqual(ui.summary(status), "Finishing your update...")
+        self.assertEqual(status["error"], error)
+        for phase, code in (("failed", "HEALTH_NOT_READY"),
+                            ("rolled_back", "HEALTH_NOT_READY"),
+                            ("recovery_required", "HEALTH_NOT_READY"),
+                            ("tryboot_running", "HEALTH"),
+                            ("tryboot_running", "SIGNATURE")):
+            with self.subTest(phase=phase, code=code):
+                self.assertIn("Reference: " + code,
+                              ui.summary(dict(phase=phase, error=dict(code=code))))
 
     def test_menu_transition_does_not_flash_completed_update_actions(self):
         client = ui.Updates(lambda command: {})
@@ -311,15 +367,37 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertNotIn("MiB", ui.progress_text(status))
             self.assertNotIn("Update complete", ui.summary(status))
 
-    def test_storage_wait_hides_stale_count_and_reports_elapsed_only(self):
+    def test_storage_wait_hides_stale_count_and_elapsed_time(self):
         status = dict(phase="staging_boot", progress=dict(received=100, total=100),
                       operation=dict(name="save_boot", elapsed=65))
         self.assertIsNone(ui.progress_fraction(status))
-        self.assertEqual(ui.progress_text(status), "Elapsed: 1:05")
+        self.assertEqual(ui.progress_text(status), "")
         self.assertIn("Saving startup files", ui.summary(status))
         status["operation"]["name"] = "check_restart"
         self.assertIsNone(ui.progress_fraction(status))
         self.assertNotIn("Checking files before restart", ui.summary(status))
+
+    def test_unmeasured_operations_have_no_timer_or_waiting_placeholder(self):
+        for name, (phases, _, _) in ui.OPERATIONS.items():
+            for phase in phases:
+                with self.subTest(name=name, phase=phase):
+                    status = dict(phase=phase, operation=dict(name=name, elapsed=65))
+                    self.assertIsNone(ui.progress_fraction(status))
+                    self.assertEqual(ui.progress_text(status), "")
+        self.assertEqual(ui.progress_text(dict(phase="downloading")), "")
+
+    def test_quiet_measurements_keep_step_description_and_real_percentage(self):
+        for name, (phases, label, measurable) in ui.OPERATIONS.items():
+            if not measurable:
+                continue
+            for quiet_seconds in (0, 15, 60, 600):
+                with self.subTest(name=name, quiet_seconds=quiet_seconds):
+                    status = dict(phase=phases[0], operation=dict(
+                        name=name, received=25, total=100, quiet_seconds=quiet_seconds))
+                    self.assertEqual(ui.progress_detail(status), label)
+                    self.assertEqual(ui.progress_fraction(status), .25)
+                    self.assertEqual(ui.progress_text(status), "25%")
+                    self.assertNotIn("No new progress", ui.summary(status))
 
     def test_journey_and_copy_do_not_expose_slots_or_early_success(self):
         for phase in ("invalidating", "staging", "installing", "staging_root", "finishing"):
@@ -342,6 +420,29 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertEqual(ui.actions(status), [("Check for Updates", "check")])
         status.update(error=dict(command="close", code="SESSION"))
         self.assertIn("Reference: SESSION", ui.summary(status))
+
+    def test_restart_verification_stays_in_check_until_boot_switch(self):
+        for name in (None, "check_restart", "unrecognized"):
+            status = dict(phase="restarting",
+                          operation=dict(name=name, received=25, total=100))
+            self.assertEqual(ui.step_index(status), 3)
+            self.assertEqual(ui.journey(status)[3:], (("Check", "active"), ("Restart", "upcoming")))
+            self.assertEqual(ui.progress_detail(status), "Checking installed files")
+        status["operation"] = dict(name="save_restart")
+        self.assertEqual(ui.step_index(status), 4)
+        self.assertEqual(ui.journey(status)[3:], (("Check", "done"), ("Restart", "active")))
+        self.assertEqual(ui.progress_detail(status), "Getting ready to restart")
+
+    def test_finish_update_request_immediately_returns_to_check(self):
+        client = ui.Updates(lambda command: {})
+        self.addCleanup(client.close)
+        client.status = dict(phase="ready_to_restart", can_restart=True,
+                             provider_launch_allowed=False)
+        for queued in (False, True):
+            client.active_command = "status" if queued else "restart"
+            client.queued_action = "restart" if queued else None
+            self.assertEqual(ui.step_index(client.display_status), 3)
+            self.assertEqual(ui.actions(client.display_status), [])
 
     def test_version_header_is_separate_from_task_status(self):
         status = dict(phase="verifying", current_version="0.1.0-beta.6",

@@ -43,7 +43,7 @@ OPERATIONS = {
     "check_final": (("publishing",), "Performing the final installation check", "checked"),
     "release_storage": (("publishing",), "Finishing up", None),
     "cleanup": (("finishing",), "Removing temporary update files", None),
-    "check_restart": (("restarting",), "Checking files before restart", "checked"),
+    "check_restart": (("restarting",), "Checking installed files", "checked"),
     "save_restart": (("restarting",), "Getting ready to restart", None),
 }
 STEPS = ("Download", "Prepare", "Install", "Check", "Restart")
@@ -54,7 +54,7 @@ def request_text(command):
         "check": "Checking for updates...",
         "install": "Starting your update...",
         "cancel": "Cancelling your update...",
-        "restart": "Preparing to restart...",
+        "restart": "Checking your update...",
         "status": "Refreshing update status...",
         "open": "Opening System Updates...",
         "open-beta": "Opening Beta Releases...",
@@ -121,7 +121,9 @@ def step_index(status):
         return 2
     if phase in ("verifying_slot", "publishing", "finishing"):
         return 3
-    if phase in ("ready_to_restart", "restarting", "tryboot_running", "promoting"):
+    if phase == "restarting":
+        return 4 if (operation(status) or {}).get("name") == "save_restart" else 3
+    if phase in ("ready_to_restart", "tryboot_running", "promoting"):
         return 4
     return None
 
@@ -221,11 +223,7 @@ def progress_text(status):
         return ""
     counts = progress_counts(status)
     if counts is None:
-        sample = operation(status)
-        elapsed = sample.get("elapsed") if sample else None
-        if type(elapsed) is int and 0 <= elapsed <= 31 * 86400:
-            return f"Elapsed: {elapsed // 60}:{elapsed % 60:02d}"
-        return "Waiting for progress..."
+        return ""
     received, total = counts
     return f"{100 * received // total}%"
 
@@ -235,11 +233,7 @@ def progress_detail(status):
         return "Cancelling your update. Waiting for the current task to stop safely."
     sample = operation(status)
     if sample:
-        text = OPERATIONS[sample["name"]][1]
-        if (progress_counts(status) is not None
-                and type(sample.get("quiet_seconds")) is int and sample["quiet_seconds"] >= 15):
-            text += ". No new progress reported yet."
-        return text
+        return OPERATIONS[sample["name"]][1]
     return {
         "downloading": "Connecting to the update service",
         "verifying": "Checking and preparing the downloaded files",
@@ -254,7 +248,7 @@ def progress_detail(status):
         "verifying_slot": "Checking installed files",
         "publishing": "Saving and checking the installation",
         "finishing": "Finishing up before restart",
-        "restarting": "Checking files and saving settings before restart",
+        "restarting": "Checking installed files",
         "starting": "Starting your update...",
         "returning": "Returning to the Main Menu...",
         "tryboot_running": "Finishing your update...",
@@ -283,7 +277,7 @@ def summary(status, *, include_progress=True):
         "promoting": "Confirming the updated system...",
         "finishing": "Finishing installation. Do not disconnect from power.",
         "ready_to_restart": "Select Finish Update to complete the update. Cloudplay will check the files and restart.",
-        "restarting": "Rechecking the installed files before restart. Do not disconnect from power.",
+        "restarting": "Checking installed files. Do not disconnect from power.",
         "tryboot_running": "Checking the updated system...",
         "promoted": "Check for updates",
         "rolled_back": "The update couldn't start. You're back on your previous version.",
@@ -301,7 +295,9 @@ def summary(status, *, include_progress=True):
     lines = [progress_detail(status) if phase in BUSY and phase != "checking" else text]
     if include_progress and progress_counts(status) is not None:
         lines.append(progress_text(status))
-    if error:
+    startup_wait = (phase == "tryboot_running" and isinstance(error, dict)
+                    and error.get("code") == "HEALTH_NOT_READY" and not error.get("command"))
+    if error and not startup_wait:
         lines.append(error_detail(error))
     notes = status.get("notes")
     if isinstance(notes, str) and notes.strip() and phase == "available":
@@ -380,8 +376,13 @@ class Updates:
     @property
     def display_status(self):
         command = self.queued_action or self.active_command
-        if command in ("install", "close"):
-            return dict(self.status, phase="starting" if command == "install" else "returning",
+        if command == "check":
+            return dict(self.status, phase="checking", install_enabled=False,
+                        can_cancel=False, can_restart=False, available_version=None,
+                        candidate_version=None, progress=None, operation=None, error=None)
+        if command in ("install", "close", "restart"):
+            phase = {"install": "starting", "close": "returning", "restart": "restarting"}[command]
+            return dict(self.status, phase=phase,
                         install_enabled=False,
                         provider_launch_allowed=False, can_cancel=False, can_restart=False,
                         progress=None, operation=None, error=None)
@@ -395,6 +396,8 @@ class Updates:
         if self.pending:
             if self.active_command == "status" and command != "status" and self.queued_action is None:
                 self.queued_action = command
+                if command == "check":
+                    self.error = ""
                 return True
             return False
         if command == "dismiss":
@@ -403,6 +406,8 @@ class Updates:
             return True
         self.pending = True
         self.active_command = command
+        if command == "check":
+            self.error = ""
         self.commands.put_nowait(command)
         return True
 
