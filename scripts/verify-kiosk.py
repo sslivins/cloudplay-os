@@ -99,6 +99,7 @@ def effective_ssh(command="/usr/sbin/sshd", extra=()):
 
 def main():
     browser_policy = verify_browser_policy()
+    browser = json.loads(Path("/opt/cloudplay-build-inputs/manifest.json").read_text())["browser"]
     import pwd
     installed = subprocess.check_output(
         ["dpkg-query", "-W", "-f=${binary:Package}\t${db:Status-Status}\n"], text=True)
@@ -329,7 +330,8 @@ def main():
         "development_login": "cloud / cloud (public, temporary)" if development_ssh else None,
         "desktop_wizard_absent": True,
         "session": "greetd PAM/login + logind + dbus-run-session + labwc",
-        "browser_release": "v0.4.1", "browser_policy": browser_policy, "plymouth_theme": "cloudplay",
+        "browser_release": browser["release"], "browser_package_version": browser["package_version"],
+        "browser_policy": browser_policy, "plymouth_theme": "cloudplay",
         "onboarding": "network-only; separate sandboxed setup browser; private optional phone AP",
         "home": "native GTK Wayland; owner-only Unix control; fixed per-service user cgroup",
         "home_ui_smoke": home_smoke,

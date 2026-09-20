@@ -419,7 +419,14 @@ each new image; a configured policy alone does not establish successful access.
 
 ## Browser/extension security debt
 
-All four v0.4.1 Chromium packages are held together. An ordinary apt upgrade
+All four Chromium packages pinned in `manifest.json` are held together. The
+current release is `chromium-153.0.8010.47-2-rpt1-hevc1`, with Debian version
+`1:153.0.8010.47-2~deb13u1+rpt1`. Release tags now identify the Chromium base,
+RPi revision and HEVC patch revision; legacy `vX.Y.Z` pins remain supported.
+The export report derives its browser release and package version from these
+pins. GitHub asset filenames use `.deb13u1` where the package version uses
+`~deb13u1`; keep those distinct when updating the manifest.
+An ordinary apt upgrade
 does **not** patch browser vulnerabilities. Maintainers must monitor advisories,
 review replacements in the separate browser project, update all four digests
 and the actual Debian version, then rebuild/retest. The image workflow does not
