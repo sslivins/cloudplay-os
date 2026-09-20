@@ -247,8 +247,9 @@ come from the checked manifest, plus generated files and minus withheld entries
 where applicable. Copy completion still follows file fsync/attribute work.
 
 Opaque operations (signature tool, formatting, profile preservation, flushing,
-configuration, unmount and cleanup) have explicit labels and elapsed task time,
-with **no bouncing progress bar or fabricated percentage/ETA**. The active
+configuration, unmount and cleanup) have explicit labels and a spinning active
+milestone, with no elapsed timer or waiting-for-progress placeholder and
+**no bouncing progress bar or fabricated percentage/ETA**. The active
 milestone animates during measurable and opaque work, but not while waiting for
 an explicit recovery action, after completion, or when the status connection fails.
 Byte counters can

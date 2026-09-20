@@ -221,11 +221,7 @@ def progress_text(status):
         return ""
     counts = progress_counts(status)
     if counts is None:
-        sample = operation(status)
-        elapsed = sample.get("elapsed") if sample else None
-        if type(elapsed) is int and 0 <= elapsed <= 31 * 86400:
-            return f"Elapsed: {elapsed // 60}:{elapsed % 60:02d}"
-        return "Waiting for progress..."
+        return ""
     received, total = counts
     return f"{100 * received // total}%"
 

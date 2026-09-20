@@ -278,7 +278,8 @@ def drive_trusted(window, buttons, titles):
         updates.changed = True
     elif step == 12:
         assert not progress_widgets["bar"].get_visible()
-        assert "Elapsed: 1:05" in titles
+        assert not any("Elapsed:" in text or "Waiting for progress" in text for text in titles)
+        assert not progress_widgets["bar"].get_visible()
         assert any("Saving system files" in text for text in titles)
         check_timeline(window, 3)
         snapshot(window, "update-storage-wait")

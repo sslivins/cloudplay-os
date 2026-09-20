@@ -353,15 +353,24 @@ class UpdatePresentationTests(unittest.TestCase):
             self.assertNotIn("MiB", ui.progress_text(status))
             self.assertNotIn("Update complete", ui.summary(status))
 
-    def test_storage_wait_hides_stale_count_and_reports_elapsed_only(self):
+    def test_storage_wait_hides_stale_count_and_elapsed_time(self):
         status = dict(phase="staging_boot", progress=dict(received=100, total=100),
                       operation=dict(name="save_boot", elapsed=65))
         self.assertIsNone(ui.progress_fraction(status))
-        self.assertEqual(ui.progress_text(status), "Elapsed: 1:05")
+        self.assertEqual(ui.progress_text(status), "")
         self.assertIn("Saving startup files", ui.summary(status))
         status["operation"]["name"] = "check_restart"
         self.assertIsNone(ui.progress_fraction(status))
         self.assertNotIn("Checking files before restart", ui.summary(status))
+
+    def test_unmeasured_operations_have_no_timer_or_waiting_placeholder(self):
+        for name, (phases, _, _) in ui.OPERATIONS.items():
+            for phase in phases:
+                with self.subTest(name=name, phase=phase):
+                    status = dict(phase=phase, operation=dict(name=name, elapsed=65))
+                    self.assertIsNone(ui.progress_fraction(status))
+                    self.assertEqual(ui.progress_text(status), "")
+        self.assertEqual(ui.progress_text(dict(phase="downloading")), "")
 
     def test_journey_and_copy_do_not_expose_slots_or_early_success(self):
         for phase in ("invalidating", "staging", "installing", "staging_root", "finishing"):
