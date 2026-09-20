@@ -23,6 +23,8 @@ jobs:
           work=$(mktemp -d)
           trap 'rm -rf -- "$work"' EXIT
           mkdir "$work/config"
+          printf '%s\n' '#!/bin/bash' 'python3 scripts/check-launcher.py' \
+            'result=$?' 'labwc -e' 'exit "$result"' > "$work/client.sh"
           for mode in home updates trusted; do
             updates=0
             trusted=0
@@ -32,7 +34,7 @@ jobs:
               CLOUDPLAY_SMOKE_UPDATES="$updates" CLOUDPLAY_SMOKE_TRUSTED="$trusted" \
               CLOUDPLAY_SMOKE_RESULT="$work/$mode.json" \
               timeout --kill-after=5 20 dbus-run-session -- labwc -C "$work/config" \
-              -s 'python3 scripts/check-launcher.py; labwc -e'
+              -s "bash $work/client.sh"
             test -f "$work/$mode.json"
           done
       - run: python3 scripts/artifacts.py validate --allow-unset
