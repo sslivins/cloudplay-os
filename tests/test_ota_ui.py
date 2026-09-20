@@ -332,7 +332,16 @@ class UpdatePresentationTests(unittest.TestCase):
         self.assertIsNone(ui.step_index(dict(phase="promoted")))
         self.assertEqual(ui.journey(dict(phase="available")), ())
         self.assertNotIn("finished playing", ui.summary(dict(phase="ready_to_restart")))
-        self.assertIn("Update complete", ui.summary(dict(phase="promoted")))
+        self.assertEqual(ui.summary(dict(phase="promoted")), "Check for updates")
+
+    def test_completed_install_does_not_claim_current_discovery_freshness(self):
+        status = dict(phase="promoted", last_successful_check=time.time(),
+                      notice="Update confirmed successfully", current_version="0.1.0-beta.13")
+        self.assertEqual(ui.summary(status), "Check for updates")
+        self.assertEqual(ui.journey(status), ())
+        self.assertEqual(ui.actions(status), [("Check for Updates", "check")])
+        status.update(error=dict(command="close", code="SESSION"))
+        self.assertIn("Reference: SESSION", ui.summary(status))
 
     def test_version_header_is_separate_from_task_status(self):
         status = dict(phase="verifying", current_version="0.1.0-beta.6",
@@ -344,7 +353,10 @@ class UpdatePresentationTests(unittest.TestCase):
         status.update(candidate_version="0.1.0-beta.8")
         self.assertTrue(ui.version_text(status).endswith("0.1.0-beta.8"))
         self.assertEqual(ui.version_text(dict(current_version="0.1.0-beta.7")),
-                         "Cloudplay OS")
+                         "Cloudplay OS 0.1.0-beta.7")
+        for phase in ("idle", "checking", "promoted"):
+            self.assertEqual(ui.version_text(dict(phase=phase, current_version="0.1.0-beta.13")),
+                             "Cloudplay OS 0.1.0-beta.13")
         self.assertEqual(ui.version_text({}), "Cloudplay OS")
         self.assertEqual(ui.version_text(dict(available_version="0.1.0-beta.7")),
                          "Updating Cloudplay OS to 0.1.0-beta.7")
