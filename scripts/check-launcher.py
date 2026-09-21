@@ -7,11 +7,23 @@ from pathlib import Path
 source = Path(__file__).resolve().parents[1] / "launcher"
 sys.path.insert(0, str(source if source.is_dir() else Path("/usr/local/lib/cloudplay/launcher")))
 import main
+from reporting import build_report
 from updates import Updates as UpdateClient
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk
+
+
+def report_fixture(status):
+    return build_report("0.1.0-beta.23", status, 8 * 1024**3)
+
+
+def unavailable_report(status):
+    raise OSError("Fixture: release metadata is unreadable")
+
+
+main.collect_report = report_fixture
 
 
 class Browser:
@@ -194,6 +206,19 @@ def check_timeline(window, active, *, moving=True):
     return grid, header
 
 
+def check_report(window):
+    children = children_of(window)
+    assert any(isinstance(w, Gtk.Label) and w.get_text() == "REPORT A PROBLEM" for w in children)
+    row, = [w for w in children if isinstance(w, Gtk.Box)]
+    image, text = row.get_children()
+    assert image.get_pixbuf().get_width() >= 243
+    assert "GitHub sign-in is required" in text.get_text()
+    assert "Submitted issues are public" in text.get_text()
+    assert "OS: 0.1.0-beta.23" in text.get_text()
+    assert "Free: ~8 GiB" in text.get_text()
+    assert not browser.service
+
+
 def drive_trusted(window, buttons, titles):
     global done
     assert not browser.starts, "Trusted session started a browser"
@@ -345,7 +370,11 @@ def drive_trusted(window, buttons, titles):
             assert path.is_file(), "Missing real Wayland/GTK heartbeat: " + name
         buttons[-1].clicked()
     elif step == 18:
-        assert "SETTINGS" in titles and len(buttons) == 3
+        assert "SETTINGS" in titles and len(buttons) == 4
+        buttons[2].clicked()
+        check_report(window)
+        press(window, Gdk.KEY_Escape)
+        buttons = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
         updates.status.update(current_version="0.1.0-beta.4", available_version=None)
         buttons[0].clicked()
         assert updates.commands == ["check", "install", "cancel", "restart", "check"]
@@ -451,7 +480,7 @@ def drive_updates(window, children, buttons, titles):
         assert window.get_focus() is buttons[2]
         press(window, Gdk.KEY_Return)
     elif step == 1:
-        assert "SETTINGS" in titles and len(buttons) == 3
+        assert "SETTINGS" in titles and len(buttons) == 4
         snapshot(window, "settings")
         assert window.get_focus() is buttons[0]
         buttons[0].clicked()
@@ -595,6 +624,27 @@ def drive():
             press(window, Gdk.KEY_Escape)
         elif step == 11:
             assert "SETTINGS" in titles
+            buttons[2].clicked()
+        elif step == 12:
+            check_report(window)
+            snapshot(window, "report-problem")
+            pads.actions = ["back"]
+        elif step == 13:
+            assert "SETTINGS" in titles
+            main.collect_report = unavailable_report
+            buttons[2].clicked()
+        elif step == 14:
+            assert "REPORT A PROBLEM" in titles
+            assert any("Unable to prepare the report code." in text for text in titles)
+            assert not any(isinstance(w, Gtk.Box) for w in children)
+            main.collect_report = report_fixture
+            press(window, Gdk.KEY_Escape)
+            settings = [w for w in children_of(window) if isinstance(w, Gtk.Button)]
+            settings[2].clicked()
+            check_report(window)
+            control.pending = True
+        elif step == 15:
+            assert title == "MAIN MENU"
             done = True
             Gtk.main_quit()
             return False

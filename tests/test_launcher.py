@@ -357,14 +357,14 @@ class LauncherWiringTest(unittest.TestCase):
         build = (ROOT / "scripts/build-image.sh").read_text()
         stage = (ROOT / "stage-cloudplay/00-appliance/01-run.sh").read_text()
         verifier = (ROOT / "scripts/verify-kiosk.py").read_text()
-        self.assertIn("launcher/{main.py,host.py,gamepad.py,updates.py,maintenance.py,heartbeat.py}", build)
+        self.assertIn("launcher/{main.py,host.py,gamepad.py,updates.py,maintenance.py,heartbeat.py,reporting.py}", build)
         self.assertIn("cp -r launcher/assets", build)
         self.assertTrue((ROOT / "launcher/assets/updates-bell.svg").is_file())
         self.assertIn('"updates-bell.svg"', verifier)
         self.assertIn("librsvg2-common",
                       (ROOT / "stage-cloudplay/00-appliance/00-packages-nr").read_text())
         self.assertIn('cp -a "${inputs}/launcher"', stage)
-        for file in ("main.py", "host.py", "gamepad.py", "updates.py", "maintenance.py", "heartbeat.py"):
+        for file in ("main.py", "host.py", "gamepad.py", "updates.py", "maintenance.py", "heartbeat.py", "reporting.py"):
             self.assertIn('"' + file + '"', verifier)
         self.assertIn("cloudplay-home", stage)
         self.assertIn("71-cloudplay-gamepad.rules", stage)

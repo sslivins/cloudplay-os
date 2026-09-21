@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install signing interoperability tools
-        run: sudo apt-get update -qq && sudo apt-get install -y minisign zstd mtools dosfstools
+        run: sudo apt-get update -qq && sudo apt-get install -y minisign zstd mtools dosfstools python3-qrcode
       - run: python3 -m unittest discover -s tests -v
       - name: Check root-owned filesystem and peer-isolation fixtures
         run: sudo python3 -m unittest tests.test_ota_image tests.test_ota_platform tests.test_ota_maintenance -v

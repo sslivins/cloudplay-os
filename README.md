@@ -67,6 +67,20 @@ Xbox uses a separate persistent profile. Controller support requires a standard
 gamepad with D-pad, A/B and Select/Start; unsupported or unavailable controllers
 do not disable keyboard/mouse navigation.
 
+### Report a problem
+
+Choose **Settings > Report a problem** and scan the QR code with your phone.
+It opens a GitHub issue draft; **GitHub sign-in is required**, and submitted
+issues are public. Describe what happened, review the draft, and submit on your
+phone. Opening this screen does not contact GitHub or submit anything.
+
+The preview shows everything prefilled: the installed OS version, update phase,
+an allowlisted error code (not its message), and free data storage rounded to
+the nearest GiB. No logs, browser/account data, or device/network identifiers
+are included. Do not add passwords or other private information to the issue.
+The URL is capped at 240 ASCII bytes and the QR has a white quiet zone and
+integer-sized pixels. There is no reporting server or credential on the device.
+
 ### Network setup
 
 Ethernet and saved Wi-Fi connections skip setup. If a connection is needed,
@@ -132,6 +146,9 @@ sudo bash scripts/build-image.sh
 
 Images and checksums are written under `build/pi-gen/deploy/`. Do not run
 privileged image builds on a shared production host.
+
+The reporting tests require Python's `qrcode` package (`python3-qrcode` on
+Debian/Ubuntu); it is already included in the image and CI.
 
 Run the repository checks with:
 

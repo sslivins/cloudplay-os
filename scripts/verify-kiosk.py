@@ -267,7 +267,7 @@ def main():
               ("network.py", "service.py", "client.py", "readiness.py", "boot.py",
                "setup.html", "setup.js", "setup.css")]
     paths += ["/usr/local/lib/cloudplay/launcher/" + name for name in
-              ("main.py", "host.py", "gamepad.py", "updates.py", "maintenance.py", "heartbeat.py")]
+              ("main.py", "host.py", "gamepad.py", "updates.py", "maintenance.py", "heartbeat.py", "reporting.py")]
     paths += ["/usr/local/lib/cloudplay/launcher/assets/" + name for name in
               ("cloudplay-logo.png", "geforce-now-logo.png",
                "xbox-cloud-gaming-logo.png", "keyboard-icon.png",
