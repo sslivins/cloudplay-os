@@ -12,6 +12,24 @@ spec.loader.exec_module(ui)
 
 
 class UpdatePresentationTests(unittest.TestCase):
+    def test_reporting_available_for_errors_and_recovery_without_provider_access(self):
+        for phase in ("failed", "rolled_back", "recovery_required"):
+            with self.subTest(phase=phase):
+                self.assertTrue(ui.can_report(dict(phase=phase, provider_launch_allowed=False)))
+        for phase in ("idle", "ready_to_restart", "tryboot_running"):
+            with self.subTest(phase=phase):
+                self.assertTrue(ui.can_report(dict(phase=phase, error={"code": "NETWORK"})))
+        self.assertTrue(ui.can_report(dict(phase="staging_root"), "Update status unavailable"))
+
+    def test_reporting_not_offered_for_normal_progress_or_startup_wait(self):
+        for phase in ("idle", "available", "promoted", *ui.BUSY):
+            with self.subTest(phase=phase):
+                self.assertFalse(ui.can_report(dict(phase=phase)))
+        for phase in ("tryboot_running", "promoting"):
+            status = dict(phase=phase, error={"code": "HEALTH_NOT_READY"})
+            self.assertFalse(ui.can_report(status))
+            self.assertTrue(ui.can_report(status, "Update status unavailable"))
+
     def test_check_feedback_is_immediate_even_when_queued_behind_status(self):
         for queued in (False, True):
             with self.subTest(queued=queued):

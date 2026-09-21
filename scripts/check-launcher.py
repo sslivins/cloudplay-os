@@ -14,9 +14,14 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk
 
+reports = []
+report_commands = []
+
 
 def report_fixture(status):
-    return build_report("0.1.0-beta.23", status, 8 * 1024**3)
+    result = build_report("0.1.0-beta.23", status, 8 * 1024**3)
+    reports.append(result)
+    return result
 
 
 def unavailable_report(status):
@@ -216,6 +221,26 @@ def check_report(window):
     assert not browser.service
 
 
+def action(window, label):
+    button, = [w for w in children_of(window) if isinstance(w, Gtk.Button)
+               and any(isinstance(child, Gtk.Label) and child.get_text() == label
+                       for child in w.get_child().get_children())]
+    return button
+
+
+def check_update_report(window, error):
+    commands = list(updates.commands)
+    action(window, "Report a problem").grab_focus()
+    press(window, Gdk.KEY_Return)
+    check_report(window)
+    assert f"Error: {error}" in reports[-1][0]
+    action(window, "Back to Updates")
+    press(window, Gdk.KEY_Escape)
+    assert any(isinstance(w, Gtk.Label) and w.get_text() == "SYSTEM UPDATES"
+               for w in children_of(window))
+    assert updates.commands == commands, "Reporting/back issued an updater command"
+
+
 def drive_trusted(window, buttons, titles):
     global done
     assert not browser.starts, "Trusted session started a browser"
@@ -327,6 +352,7 @@ def drive_trusted(window, buttons, titles):
         assert not any(isinstance(w, Gtk.ProgressBar) for w in children_of(window))
         assert updates.error in titles
         check_timeline(window, 3, moving=False)
+        check_update_report(window, "OTHER")
         updates.error = ""
         updates.status.update(phase="promoted", provider_launch_allowed=True)
         updates.changed = True
@@ -452,6 +478,53 @@ def drive_trusted(window, buttons, titles):
         updates.fail_close = False
         buttons[-1].clicked()
         assert updates.commands.count("close") == 2
+        report_commands[:] = updates.commands
+        updates.error = ""
+        updates.status.update(phase="failed", provider_launch_allowed=True,
+                              error=dict(code="NETWORK", message="private details must not be shared"))
+        updates.changed = True
+    elif step == 31:
+        assert "SYSTEM UPDATES" in titles
+        assert any("Reference: NETWORK" in text for text in titles)
+        snapshot(window, "update-network-error-report-action")
+        action(window, "Report a problem").clicked()
+    elif step == 32:
+        check_report(window)
+        assert "Error: NETWORK" in reports[-1][0]
+        assert "private details" not in reports[-1][1]
+        snapshot(window, "report-from-update-error")
+        updates.status.update(error=dict(code="SPACE"))
+        updates.changed = True
+    elif step == 33:
+        check_report(window)
+        assert "Error: NETWORK" in reports[-1][0], "Polling replaced the captured report"
+        pads.actions = ["back"]
+    elif step == 34:
+        assert "SYSTEM UPDATES" in titles
+        assert any("Reference: SPACE" in text for text in titles)
+        assert updates.commands == report_commands, "Back rechecked or dismissed the error"
+        main.collect_report = unavailable_report
+        action(window, "Report a problem").clicked()
+    elif step == 35:
+        assert "REPORT A PROBLEM" in titles
+        assert any("Unable to prepare the report code." in text for text in titles)
+        main.collect_report = report_fixture
+        action(window, "Back to Updates").clicked()
+        updates.status.update(phase="recovery_required", provider_launch_allowed=False,
+                              error=dict(code="ROLLBACK_LOOP"))
+        updates.changed = True
+    elif step == 36:
+        assert "SYSTEM UPDATES" in titles
+        check_update_report(window, "ROLLBACK_LOOP")
+        pads.actions = ["back"]
+    elif step == 37:
+        assert "SYSTEM UPDATES" in titles, "Report navigation bypassed recovery restrictions"
+        assert updates.commands == report_commands
+        updates.status.update(phase="rolled_back", provider_launch_allowed=True, error=None)
+        updates.changed = True
+    elif step == 38:
+        check_update_report(window, "none")
+        assert updates.commands == report_commands
         done = True
         Gtk.main_quit()
         return False
@@ -496,9 +569,10 @@ def drive_updates(window, children, buttons, titles):
         updates.error = "System Updates could not be opened"
         updates.changed = True
     elif step == 5:
-        assert "SYSTEM UPDATES" in titles and len(buttons) == 2
+        assert "SYSTEM UPDATES" in titles and len(buttons) == 3
         assert updates.error in titles
-        buttons[0].clicked()
+        check_update_report(window, "OTHER")
+        action(window, "Try Again").clicked()
         assert updates.commands == ["open", "open", "open"]
         updates.error = ""
         updates.changed = True
