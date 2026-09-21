@@ -18,7 +18,7 @@ class EarlyGuardTests(unittest.TestCase):
         self.boot, self.run_dir = self.root / "boot", self.root / "run"
         self.boot.mkdir()
         self.run_dir.mkdir()
-        self.time = 600
+        self.time = 90
         self.events = []
         self.active = "B"
         self.good_error = False
@@ -80,6 +80,30 @@ class EarlyGuardTests(unittest.TestCase):
         self.assertEqual(self.events, ["inspect_without_data", "verify_good", "flush_ticket",
                                       "quarantine", ("pointer", "A", "A"), "reboot"])
 
+    def test_default_ticket_uses_90_second_deadline(self):
+        self.assertEqual(self.sentinel["guard"]["deadline_seconds"], 90)
+
+    def test_new_and_legacy_tickets_roll_back_at_exactly_90_seconds(self):
+        for seconds in (90, 600):
+            with self.subTest(ticket_deadline=seconds):
+                self.sentinel["guard"].update(deadline_seconds=seconds, attempted=False)
+                self.save()
+                self.events.clear()
+                self.time = 89
+                self.assertEqual(self.guard.run(), "rollback_requested")
+                self.assertEqual(self.time, 90)
+                saved = read_json(self.boot / "slot-valid.json")["guard"]
+                self.assertEqual(saved["deadline_seconds"], seconds)
+                self.assertTrue(saved["attempted"])
+                self.assertEqual(self.events.count("reboot"), 1)
+
+    def test_legacy_ticket_does_not_extend_deadline_on_late_start(self):
+        self.sentinel["guard"]["deadline_seconds"] = 600
+        self.save()
+        self.time = 95
+        self.guard.sleep = lambda _: self.fail("late legacy guard must roll back immediately")
+        self.assertEqual(self.guard.run(), "rollback_requested")
+
     def test_restart_does_not_reset_boot_deadline(self):
         self.time = 900
         self.guard.sleep = lambda _: self.fail("overdue guard must not restart its timer")
@@ -111,7 +135,7 @@ class EarlyGuardTests(unittest.TestCase):
         self.assertEqual(self.events, [])
 
     def test_confirmation_while_waiting_exits_without_reboot(self):
-        self.time = 100
+        self.time = 20
         def confirm(seconds):
             self.time += seconds
             self.sentinel["guard"].update(armed=False, confirmed=True)
@@ -146,7 +170,7 @@ class EarlyGuardTests(unittest.TestCase):
             validate_ticket(self.sentinel, run_dir=self.run_dir)
 
     def test_deadline_policy_cannot_change_mid_wait(self):
-        self.time = 100
+        self.time = 20
         def change_policy(seconds):
             self.time += seconds
             self.sentinel["guard"]["deadline_seconds"] = 900

@@ -24,6 +24,11 @@ PHASES = frozenset({
 })
 
 
+def confirmation_deadline(seconds):
+    """Interpret the legacy default without rewriting shared policy or boot tickets."""
+    return 90 if seconds == 600 else seconds
+
+
 class UpdateError(ValueError):
     def __init__(self, code: str, message: str):
         self.code = code
@@ -122,7 +127,7 @@ class Config:
     minimum_eeprom: str = ""
     boot_order: str = ""
     stabilization_seconds: int = 10
-    deadline_seconds: int = 600
+    deadline_seconds: int = 90
     strike_limit: int = 3
 
     @classmethod
@@ -139,6 +144,12 @@ class Config:
             logging.getLogger("cloudplay.updater").info(
                 "Using 10-second stabilization in place of the legacy 120-second default; policy file unchanged")
             result = replace(result, stabilization_seconds=10)
+        deadline = confirmation_deadline(result.deadline_seconds)
+        if deadline != result.deadline_seconds:
+            logging.getLogger("cloudplay.updater").info(
+                "Using 90-second confirmation deadline in place of the legacy 600-second default; policy file unchanged")
+            result = replace(result, deadline_seconds=deadline)
+        result.validate()
         return result
 
     def validate(self):

@@ -8,7 +8,8 @@ import re
 import time
 
 from .artifacts import SemVer, canonical_json
-from .state import Config, Journal, UpdateError, atomic_write, fail, read_json, trusted_path
+from .state import (Config, Journal, UpdateError, atomic_write, confirmation_deadline,
+                    fail, read_json, trusted_path)
 
 BOOT_DIR = Path("/boot/firmware")
 RUN_DIR = Path("/run/cloudplay-early")
@@ -130,7 +131,8 @@ class EarlyGuard:
                 return "confirmed"
             if not ticket["armed"]:
                 fail("BOOT_GUARD", "candidate capability is neither armed nor confirmed")
-            remaining = ticket["deadline_seconds"] - self.clock()
+            deadline = confirmation_deadline(ticket["deadline_seconds"])
+            remaining = deadline - self.clock()
             if remaining > 0:
                 self.sleep(min(5, remaining))
                 continue
@@ -164,6 +166,6 @@ class EarlyGuard:
                 if exc.code != "BUSY":
                     raise
                 # A bounded promotion/rollback operation owns the same lock.
-                if self.clock() >= ticket["deadline_seconds"] + 120:
+                if self.clock() >= deadline + 120:
                     fail("BOOT_GUARD_BUSY", "promotion/rollback lock exceeded its deadline; local recovery required")
                 self.sleep(1)
