@@ -15,6 +15,8 @@ jobs:
       - name: Fail before spending build time if pins are unfinished
         run: |
           python3 scripts/artifacts.py validate
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-qrcode
           python3 -m unittest discover -s tests -v
       - name: Install pi-gen host dependencies
         run: |

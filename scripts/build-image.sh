@@ -31,7 +31,7 @@ rm -rf build/pi-gen/export-image/01-user-rename
 mkdir -p build/pi-gen/cloudplay-inputs build/pi-gen/export-image/04-cloudplay-manifest
 mkdir -p build/pi-gen/cloudplay-inputs/onboarding
 mkdir -p build/pi-gen/cloudplay-inputs/launcher
-cp launcher/{main.py,host.py,gamepad.py,updates.py,maintenance.py,heartbeat.py} build/pi-gen/cloudplay-inputs/launcher/
+cp launcher/{main.py,host.py,gamepad.py,updates.py,maintenance.py,heartbeat.py,reporting.py} build/pi-gen/cloudplay-inputs/launcher/
 cp -r launcher/assets build/pi-gen/cloudplay-inputs/launcher/
 cp onboarding/{network.py,service.py,client.py,readiness.py,boot.py,setup.html,setup.js,setup.css} \
     build/pi-gen/cloudplay-inputs/onboarding/

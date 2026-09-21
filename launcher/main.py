@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Native Wayland Home and host-owned leave confirmation; no web control API."""
+import logging
 import os
 import re
 import signal
@@ -11,6 +12,7 @@ from host import Browser, Control, SERVICES, request_home
 from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
 from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text, error_detail
+from reporting import collect_report, qr_pixels
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -229,6 +231,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     next_check = 0
     updates_screen = False
     settings_screen = False
+    report_screen = False
     settings_channel = None
     beta_screen = False
     beta_choices = None
@@ -376,12 +379,13 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
 
     def show(title, choices, note="", services=False, return_help=False, activity=False,
              stages=(), checking=False):
-        nonlocal updates_screen, settings_screen, beta_screen, beta_choices
+        nonlocal updates_screen, settings_screen, beta_screen, beta_choices, report_screen
         nonlocal update_confirmation, update_notice, settings_shortcut
         nonlocal update_message, update_progress, update_choices
         nonlocal update_journey, update_activity_text, update_version
         updates_screen = False
         settings_screen = title == "SETTINGS"
+        report_screen = title == "REPORT A PROBLEM"
         beta_screen = title == "BETA RELEASES"
         beta_choices = None
         update_confirmation = title == "CONFIRM UPDATE"
@@ -398,7 +402,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         buttons.clear()
         update_page = title in ("SYSTEM UPDATES", "CONFIRM UPDATE")
         box.set_valign(Gtk.Align.START if update_page else Gtk.Align.CENTER)
-        add_brand(compact=update_page)
+        add_brand(compact=update_page or report_screen)
         box.pack_start(style(Gtk.Label(label=title), "page-title"), False, False, 0)
         if update_page:
             update_version = style(Gtk.Label(label=version_text(updates.status if updates else {})), "update-version")
@@ -501,8 +505,48 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         show("SETTINGS",
              [("System Updates", open_updates, "software-update-available-symbolic", False),
               (beta_label, open_beta, "preferences-system-symbolic", False),
+              ("Report a problem", show_report, "dialog-information-symbolic", False),
               ("Main Menu", lambda: submit_update("close") if trusted_updates else home(),
                "go-home-symbolic", True)])
+
+    def show_report():
+        if browser.service:
+            return
+        if trusted_updates and updates.status.get("provider_launch_allowed") is not True:
+            show_updates()
+            return
+        choices = [("Back to Settings", show_settings, "go-previous-symbolic", True)]
+        try:
+            summary, url = collect_report(updates.status if updates else {"phase": "unavailable"})
+            width, rgb = qr_pixels(url, max(4, round(6 * scale)))
+            pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
+                GLib.Bytes.new(rgb), GdkPixbuf.Colorspace.RGB, False, 8, width, width, width * 3)
+        except (OSError, ValueError, ImportError):
+            logging.getLogger(__name__).exception("Problem report QR could not be prepared")
+            show("REPORT A PROBLEM", choices,
+                 "Unable to prepare the report code.\n"
+                 "On your phone, visit github.com/sslivins/cloudplay-os/issues\n"
+                 "GitHub sign-in is required. Submitted issues are public.")
+            return
+        show("REPORT A PROBLEM", choices)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=pixels(36))
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        image.get_accessible().set_name("Scan to open a GitHub issue draft")
+        row.pack_start(image, False, False, 0)
+        text = style(Gtk.Label(label=(
+            "Scan with your phone to describe the problem.\n"
+            "GitHub sign-in is required. Submitted issues are public.\n"
+            "Nothing is posted until you submit on your phone.\n\n"
+            "Only this diagnostic summary is prefilled:\n" + summary +
+            "\n\nNo logs, account details or network identifiers.\n"
+            "Please do not add passwords or other private information.")), "status")
+        text.set_line_wrap(True)
+        text.set_max_width_chars(44)
+        text.set_xalign(0)
+        row.pack_start(text, False, False, 0)
+        box.pack_start(row, False, False, 0)
+        box.reorder_child(row, 2)
+        row.show_all()
 
     def open_beta():
         if browser.service:
@@ -697,7 +741,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     def ask_home():
         nonlocal confirming
         if not browser.service:
-            if not window.get_visible() or updates_screen or update_confirmation or settings_screen or beta_screen:
+            if not window.get_visible() or updates_screen or update_confirmation or settings_screen or beta_screen or report_screen:
                 home()
             return
         if confirming:
@@ -727,6 +771,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             else:
                 show_settings()
         elif action == "back" and beta_screen:
+            show_settings()
+        elif action == "back" and report_screen:
             show_settings()
         elif action == "back" and settings_screen:
             if trusted_updates:
