@@ -37,7 +37,7 @@ class FakePlatform:
         self.fail_health = False
         self.fail_verify = False
         self.staging_failure = False
-        self.guard = dict(attempted=False, confirmed=False, deadline_seconds=600)
+        self.guard = dict(attempted=False, confirmed=False, deadline_seconds=90)
 
     def inspect(self):
         return type("Layout", (), {"active": self.active,
@@ -108,9 +108,9 @@ class FakePlatform:
 class HealthTimingConfigTests(unittest.TestCase):
     def test_default_and_bounds_preserve_recovery_deadline(self):
         self.assertEqual(Config().stabilization_seconds, 10)
-        self.assertEqual(Config().deadline_seconds, 600)
+        self.assertEqual(Config().deadline_seconds, 90)
         Config().validate()
-        for seconds in (0, 9, 600):
+        for seconds in (0, 9, 90):
             with self.subTest(seconds=seconds), self.assertRaises(UpdateError):
                 replace(Config(), stabilization_seconds=seconds).validate()
 
@@ -124,12 +124,23 @@ class HealthTimingConfigTests(unittest.TestCase):
                     self.assertLogs("cloudplay.updater", level="INFO"):
                 loaded = Config.load(path)
             self.assertEqual(loaded.stabilization_seconds, 10)
-            self.assertEqual(loaded.deadline_seconds, 600)
+            self.assertEqual(loaded.deadline_seconds, 90)
             self.assertEqual(path.read_bytes(), before)
-            for seconds in (10, 30, 60, 180):
+            for seconds in (10, 30, 60):
                 path.write_text(json.dumps(dict(policy, stabilization_seconds=seconds)))
                 with patch("updater.state.trusted_path"):
                     self.assertEqual(Config.load(path).stabilization_seconds, seconds)
+            path.write_text(json.dumps(dict(stabilization_seconds=180, deadline_seconds=900)))
+            with patch("updater.state.trusted_path"):
+                loaded = Config.load(path)
+            self.assertEqual((loaded.stabilization_seconds, loaded.deadline_seconds), (180, 900))
+
+    def test_legacy_deadline_cannot_leave_impossible_health_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(dict(stabilization_seconds=90, deadline_seconds=600)))
+            with patch("updater.state.trusted_path"), self.assertRaisesRegex(UpdateError, "health time bounds"):
+                Config.load(path)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -143,7 +154,7 @@ class RuntimeTests(unittest.TestCase):
         self.meta = dict(version="1.1.0+release", key_epoch=2,
                          manifest_sha256="a" * 64,
                          manifest={"boot/config.txt": {"sha256": "b" * 64}})
-        self.time = 100.0
+        self.time = 20.0
         self.verifier = Mock(side_effect=lambda *args, **kwargs: copy.deepcopy(self.meta))
         self.runtime = Runtime(self.config, platform=self.platform, discovery=FakeDiscovery(),
                                verifier=self.verifier, clock=lambda: self.time)
@@ -685,22 +696,58 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.runtime.reconcile(boot_id="boot1")["phase"], "tryboot_running")
         pending = self.runtime.journal.load()["pending"]
         self.assertEqual(pending["boot_id"], "boot1")
-        self.assertEqual(pending["deadline"], 600)
+        self.assertEqual(pending["deadline"], 90)
 
     def test_reconcile_same_boot_does_not_extend_deadline(self):
         self.test_candidate_recognized_without_dt_tryboot()
-        self.time = 200
+        self.time = 40
         self.runtime.reconcile(boot_id="boot1")
-        self.assertEqual(self.runtime.journal.load()["pending"]["deadline"], 600)
+        self.assertEqual(self.runtime.journal.load()["pending"]["deadline"], 90)
+
+    def test_legacy_ticket_reconciles_to_90_without_rewriting_ticket(self):
+        self.platform.guard["deadline_seconds"] = 600
+        self.test_candidate_recognized_without_dt_tryboot()
+        self.assertEqual(self.platform.guard["deadline_seconds"], 600)
+
+    def test_legacy_candidate_already_past_90_rolls_back_on_reconcile(self):
+        self.runtime.install()
+        self.platform.active = "B"
+        self.platform.guard["deadline_seconds"] = 600
+        self.time = 90
+        self.runtime.reconcile(boot_id="boot1")
+        self.assertIn(("reboot", False), self.platform.calls)
+        self.assertNotIn(("pointer", "B", "A"), self.platform.calls)
+
+    def test_legacy_pending_deadline_does_not_extend_health_wait(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        self.platform.guard["deadline_seconds"] = 600
+        pending = self.runtime.journal.load()["pending"]
+        pending["deadline"] = 600
+        self.runtime.journal.update(pending=pending)
+        self.time = 89.9
+        self.runtime.health(deadline_only=True)
+        self.assertNotIn(("reboot", False), self.platform.calls)
+        self.time = 90
+        self.runtime.health(deadline_only=True)
+        self.assertIn(("reboot", False), self.platform.calls)
+
+    def test_health_cannot_confirm_at_exact_90_second_boundary(self):
+        self.test_candidate_recognized_without_dt_tryboot()
+        for self.time in (80, 82, 84, 86, 88):
+            self.runtime.health()
+        self.time = 90
+        self.runtime.health()
+        self.assertFalse(self.platform.guard["confirmed"])
+        self.assertIn(("reboot", False), self.platform.calls)
 
     def test_health_requires_continuous_stabilization_then_promotes(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        for self.time in (102, 104, 106):
+        for self.time in (22, 24, 26):
             self.runtime.health()
-        self.time = 109.9
+        self.time = 29.9
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.time = 110
+        self.time = 30
         self.assertEqual(self.runtime.health()["phase"], "promoted")
         state = self.runtime.journal.load()
         self.assertEqual(state["last_good"], "B")
@@ -711,23 +758,23 @@ class RuntimeTests(unittest.TestCase):
     def test_health_failure_resets_stabilization(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        self.time = 109
+        self.time = 29
         self.platform.fail_health = True
         self.runtime.health()
         self.assertIsNone(self.runtime.journal.load()["pending"]["healthy_since"])
         self.platform.fail_health = False
-        self.time = 110
+        self.time = 30
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.time = 119.9
+        self.time = 39.9
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.time = 120
+        self.time = 40
         self.assertEqual(self.runtime.health()["phase"], "promoted")
 
     def test_starting_service_retains_diagnostics_and_resets_health_window(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
         deadline = self.runtime.journal.load()["pending"]["deadline"]
-        self.time = 109
+        self.time = 29
         with patch.object(self.platform, "health",
                           side_effect=UpdateError("HEALTH_NOT_READY", "startup service is activating")):
             status = self.runtime.health()
@@ -737,9 +784,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNone(pending["healthy_since"])
         self.assertIsNone(pending["last_health_check"])
         self.assertEqual(pending["deadline"], deadline)
-        self.time = 110
+        self.time = 30
         self.assertIsNone(self.runtime.health()["error"])
-        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 110)
+        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 30)
 
     def test_health_waits_for_deadline_probe_lock(self):
         self.test_candidate_recognized_without_dt_tryboot()
@@ -775,9 +822,9 @@ class RuntimeTests(unittest.TestCase):
     def test_confirmed_boot_marker_recovers_interrupted_promotion_commit(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        for self.time in (102, 104, 106):
+        for self.time in (22, 24, 26):
             self.runtime.health()
-        self.time = 110
+        self.time = 30
         original = self.runtime.journal.update
         def interrupted(**changes):
             if changes.get("phase") == "promoted":
@@ -794,9 +841,9 @@ class RuntimeTests(unittest.TestCase):
     def test_missed_health_samples_restart_stabilization(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        self.time = 111
+        self.time = 31
         self.assertEqual(self.runtime.health()["phase"], "tryboot_running")
-        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 111)
+        self.assertEqual(self.runtime.journal.load()["pending"]["healthy_since"], 31)
 
     def test_early_rollback_attempt_prevents_second_data_driven_reboot(self):
         self.test_candidate_recognized_without_dt_tryboot()
@@ -816,15 +863,46 @@ class RuntimeTests(unittest.TestCase):
     def test_slow_health_cannot_promote_after_deadline(self):
         self.test_candidate_recognized_without_dt_tryboot()
         self.runtime.health()
-        self.time = 220
+        self.time = 30
         def delayed_health(pending):
-            self.time = 701
+            self.time = 90
             return self.platform.inspect()
         self.platform.health = delayed_health
         status = self.runtime.health()
         self.assertEqual(status["phase"], "recovery_required")
         self.assertIn(("reboot", False), self.platform.calls)
         self.assertNotIn(("pointer", "B", "A"), self.platform.calls)
+
+    def check_slow_promotion(self, delay):
+        self.test_candidate_recognized_without_dt_tryboot()
+        for self.time in (78, 80, 82, 84, 86):
+            self.runtime.health()
+        self.time = 88
+
+        @contextmanager
+        def delayed_lock():
+            self.time = 90
+            yield
+
+        write_pointers = self.platform.write_pointers
+
+        def delayed_pointers(layout, default, candidate):
+            write_pointers(layout, default, candidate)
+            self.time = 90
+
+        target = "guard_lock" if delay == "lock" else "write_pointers"
+        with patch.object(self.platform, target,
+                          delayed_lock if delay == "lock" else delayed_pointers):
+            self.runtime.health()
+        self.assertFalse(self.platform.guard["confirmed"])
+        self.assertIn(("reboot", False), self.platform.calls)
+        self.assertEqual(self.platform.calls[-2:], [("pointer", "A", "A"), ("reboot", False)])
+
+    def test_slow_promotion_lock_cannot_confirm_after_deadline(self):
+        self.check_slow_promotion("lock")
+
+    def test_slow_pointer_write_cannot_confirm_after_deadline(self):
+        self.check_slow_promotion("pointers")
 
     def test_deadline_quarantines_before_reboot_and_bounds_loop(self):
         self.test_candidate_recognized_without_dt_tryboot()

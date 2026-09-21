@@ -15,7 +15,8 @@ from .artifacts import (ArtifactError, GENERATED_PATHS, SemVer, sha256_file,
                         verify_bundle)
 from .discovery import Discovery, DiscoveryError
 from .platform import LinuxPlatform
-from .state import Config, Journal, UpdateError, fail, read_json, sync_directory, trusted_path
+from .state import (Config, Journal, UpdateError, confirmation_deadline, fail,
+                    read_json, sync_directory, trusted_path)
 
 COMMANDS = frozenset({"status", "check", "install", "cancel", "restart", "enable_beta", "disable_beta"})
 DESTRUCTIVE = frozenset({"invalidating", "staging_boot", "staging_root",
@@ -389,7 +390,8 @@ class Runtime:
                 if state["phase"] == "promoting" and guard["confirmed"]:
                     self._commit_promotion(state)
                     return self.status()
-                if self.clock() >= guard["deadline_seconds"]:
+                deadline = confirmation_deadline(guard["deadline_seconds"])
+                if self.clock() >= deadline:
                     return self._rollback_locked(state, layout, "Candidate exhausted its boot-local deadline")
                 if state["phase"] not in ("publishing", "ready_to_restart", "tryboot_running", "promoting"):
                     return self._rollback_locked(state, layout, "Incomplete candidate booted")
@@ -398,7 +400,7 @@ class Runtime:
                     return self._rollback_locked(state, layout, "Candidate rebooted without confirmation")
                 if pending.get("boot_id") is None:
                     pending.update(boot_id=boot_id, started=self.clock(),
-                                   deadline=guard["deadline_seconds"],
+                                   deadline=deadline,
                                    healthy_since=None, last_health_check=None)
                 # Durable pending identity wins even when firmware DT tryboot=0.
                 self.journal.update(phase="tryboot_running", pending=pending, error=None)
@@ -514,17 +516,19 @@ class Runtime:
                 self._commit_promotion(state)
                 return self.status()
             now = self.clock()
+            deadline = min(confirmation_deadline(pending["deadline"]),
+                           confirmation_deadline(guard["deadline_seconds"]))
             if self.platform.boot_id() != pending["boot_id"]:
                 return self._rollback_locked(state, self.platform.inspect(),
                                              "Candidate boot changed without confirmation")
-            if now >= pending["deadline"]:
+            if now >= deadline:
                 return self._rollback_locked(state, self.platform.inspect(), "Candidate confirmation deadline expired")
             if deadline_only:
                 return self.status()
             try:
                 layout = self.platform.health(pending)
             except ERRORS as exc:
-                if self.clock() >= pending["deadline"]:
+                if self.clock() >= deadline:
                     return self._rollback_locked(state, self.platform.inspect(),
                                                  "Failed health checks exhausted candidate deadline")
                 pending["healthy_since"] = None
@@ -533,7 +537,7 @@ class Runtime:
                                     error=dict(code=getattr(exc, "code", "HEALTH"), message=str(exc)))
                 return self.status()
             now = self.clock()
-            if now >= pending["deadline"]:
+            if now >= deadline:
                 return self._rollback_locked(state, layout, "Health checks exceeded candidate deadline")
             last_check = pending.get("last_health_check")
             pending["last_health_check"] = now
@@ -545,10 +549,14 @@ class Runtime:
                 with self.platform.guard_lock():
                     if self.platform.guard_state(pending)["attempted"]:
                         fail("ROLLBACK_LOOP", "early rollback claimed the candidate before promotion")
-                    self.journal.update(phase="promoting", pending=pending)
-                    self.platform.write_pointers(layout, pending["slot"], state["last_good"])
-                    self.platform.mark_guard(confirmed=True)
-                    self._commit_promotion(state)
+                    if self.clock() < deadline:
+                        self.journal.update(phase="promoting", pending=pending)
+                        self.platform.write_pointers(layout, pending["slot"], state["last_good"])
+                        if self.clock() < deadline:
+                            self.platform.mark_guard(confirmed=True)
+                            self._commit_promotion(state)
+                            return self.status()
+                return self._rollback_locked(state, layout, "Promotion exhausted candidate deadline")
             else:
                 self.journal.update(pending=pending, error=None)
         return self.status()

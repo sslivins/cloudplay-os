@@ -386,7 +386,7 @@ non-root writable. Paths must be absolute and contain no whitespace.
   "minimum_eeprom": "",
   "boot_order": "",
   "stabilization_seconds": 10,
-  "deadline_seconds": 600,
+  "deadline_seconds": 90,
   "strike_limit": 3
 }
 ```
@@ -519,7 +519,8 @@ Health verifies active disk/slot, signed release-record hash and identity,
 config hash, slot sentinel, writable data, correct per-slot profile mount and
 ownership, three appliance services, and fresh launcher/compositor heartbeats.
 Internet and display presence are not required. It requires 10 continuous
-healthy seconds within a 600-second candidate deadline; a failed check resets
+healthy seconds within a 90-second candidate deadline measured from boot, not
+from when the launcher appears; a failed check resets
 the stabilization interval, as does a gap exceeding the stabilization window
 (capped at 30 seconds) between health samples. The timer starts five seconds
 after boot and runs again two seconds after each completed check. Boot readiness,
@@ -528,6 +529,14 @@ is not a promise of a ten-second total reboot. Launcher and compositor heartbeat
 must be no older than five seconds under the default policy, so a single stale
 startup heartbeat cannot satisfy the shorter window. The finishing screen does
 not show the misleading "Waiting for progress..." placeholder.
+The legacy 600-second default in shared configuration, pending journal state,
+and boot-local tickets is interpreted as 90 seconds by the new updater and
+independent guard. The legacy 120-second stabilization default remains mapped
+to 10 seconds. Shared policy and ticket deadline fields are not rewritten, so
+an older fallback slot retains its original policy. This also applies on the
+first boot of the new release when an older installer created a 600-second
+ticket. Other explicit deadline values are preserved; a custom stabilization
+window must fit inside its effective deadline.
 Deadline state is boot-bound and not extended by
 repeated reconciliation. Health samples wait up to five seconds for the shared
 operation lock so a brief concurrent deadline probe does not discard a sample.
@@ -618,7 +627,7 @@ automatically. Physical-media tampering is outside the unsigned-boot threat
 model, just as it is for the root configuration and kernel.
 
 The early guard reads no `/data` files or graphical-service state. At the
-configured boot-monotonic deadline (600 seconds by default), it validates actual
+configured boot-monotonic deadline (90 seconds by default), it validates actual
 mounted root/boot ancestry and all six GPT partitions against that approved
 record, verifies last-good, durably marks the local attempt, removes/flushes
 the current candidate's config/tryboot entrypoints, writes verified last-good
