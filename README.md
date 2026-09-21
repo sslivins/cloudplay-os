@@ -74,7 +74,7 @@ It opens a GitHub issue draft; **GitHub sign-in is required**, and submitted
 issues are public. Describe what happened, review the draft, and submit on your
 phone. Opening this screen does not contact GitHub or submit anything.
 
-The preview shows everything prefilled: the installed OS version, update phase,
+The issue draft on your phone includes the installed OS version, update phase,
 an allowlisted error code (not its message), and free data storage rounded to
 the nearest GiB. No logs, browser/account data, or device/network identifiers
 are included. Do not add passwords or other private information to the issue.

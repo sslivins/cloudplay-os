@@ -212,10 +212,7 @@ def check_report(window):
     row, = [w for w in children if isinstance(w, Gtk.Box)]
     image, text = row.get_children()
     assert image.get_pixbuf().get_width() >= 243
-    assert "GitHub sign-in is required" in text.get_text()
-    assert "Submitted issues are public" in text.get_text()
-    assert "OS: 0.1.0-beta.23" in text.get_text()
-    assert "Free: ~8 GiB" in text.get_text()
+    assert text.get_text() == "Scan to submit an issue.\nGitHub sign-in is required."
     assert not browser.service
 
 
