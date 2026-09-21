@@ -321,6 +321,14 @@ def badge(status):
     return "Updates"
 
 
+def can_report(status, client_error=""):
+    error = status.get("error")
+    waiting = (status.get("phase") in ("tryboot_running", "promoting")
+               and isinstance(error, dict) and error.get("code") == "HEALTH_NOT_READY")
+    return bool(client_error or status.get("phase") in ("failed", "rolled_back", "recovery_required")
+                or (error and not waiting))
+
+
 def actions(status):
     phase = status.get("phase", "unknown")
     result = []

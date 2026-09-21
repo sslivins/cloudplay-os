@@ -70,6 +70,10 @@ do not disable keyboard/mouse navigation.
 ### Report a problem
 
 Choose **Settings > Report a problem** and scan the QR code with your phone.
+Update error and recovery screens also offer **Report a problem** directly,
+even when returning to gaming is blocked. **Back to Updates** (or the controller's
+Back button) returns to the update screen without checking again or dismissing
+the error. The QR retains the diagnostic summary captured when it was opened.
 It opens a GitHub issue draft; **GitHub sign-in is required**, and submitted
 issues are public. Describe what happened, review the draft, and submit on your
 phone. Opening this screen does not contact GitHub or submit anything.

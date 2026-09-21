@@ -13,6 +13,7 @@ from gamepad import Gamepads
 from updates import ENABLED as OTA_ENABLED, Updates, actions as update_actions, badge as update_badge, summary as update_summary
 from updates import BUSY as UPDATE_BUSY, progress_fraction, progress_text, journey, version_text, request_text, error_detail
 from reporting import collect_report, qr_pixels
+from updates import can_report
 
 LOGO = Path(__file__).with_name("assets") / "cloudplay-logo.png"
 SERVICE_LOGOS = {
@@ -232,6 +233,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
     updates_screen = False
     settings_screen = False
     report_screen = False
+    report_return = None
     settings_channel = None
     beta_screen = False
     beta_choices = None
@@ -509,15 +511,22 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
               ("Main Menu", lambda: submit_update("close") if trusted_updates else home(),
                "go-home-symbolic", True)])
 
-    def show_report():
+    def show_report(*, from_updates=False):
+        nonlocal report_return
         if browser.service:
             return
-        if trusted_updates and updates.status.get("provider_launch_allowed") is not True:
+        if (trusted_updates and not from_updates
+                and updates.status.get("provider_launch_allowed") is not True):
             show_updates()
             return
-        choices = [("Back to Settings", show_settings, "go-previous-symbolic", True)]
+        report_return = show_updates if from_updates else show_settings
+        choices = [("Back to Updates" if from_updates else "Back to Settings",
+                    report_return, "go-previous-symbolic", True)]
         try:
-            _, url = collect_report(updates.status if updates else {"phase": "unavailable"})
+            status = updates.display_status if updates else {"phase": "unavailable"}
+            if updates and updates.error:
+                status = dict(status, error={"code": "OTHER"})
+            _, url = collect_report(status)
             width, rgb = qr_pixels(url, max(4, round(6 * scale)))
             pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
                 GLib.Bytes.new(rgb), GdkPixbuf.Colorspace.RGB, False, 8, width, width, width * 3)
@@ -636,6 +645,9 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         if not trusted_updates:
             choices = ([("Try Again", open_updates, "view-refresh-symbolic", False)]
                        if updates.error else [])
+        if can_report(status, updates.error):
+            choices.append(("Report a problem", lambda: show_report(from_updates=True),
+                            "dialog-information-symbolic", False))
         if trusted_updates:
             if status.get("provider_launch_allowed") is True:
                 choices.append(("Back to Settings", show_settings, "go-previous-symbolic", True))
@@ -769,7 +781,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         elif action == "back" and beta_screen:
             show_settings()
         elif action == "back" and report_screen:
-            show_settings()
+            report_return()
         elif action == "back" and settings_screen:
             if trusted_updates:
                 submit_update("close")
