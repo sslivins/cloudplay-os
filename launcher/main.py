@@ -517,7 +517,7 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
             return
         choices = [("Back to Settings", show_settings, "go-previous-symbolic", True)]
         try:
-            summary, url = collect_report(updates.status if updates else {"phase": "unavailable"})
+            _, url = collect_report(updates.status if updates else {"phase": "unavailable"})
             width, rgb = qr_pixels(url, max(4, round(6 * scale)))
             pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
                 GLib.Bytes.new(rgb), GdkPixbuf.Colorspace.RGB, False, 8, width, width, width * 3)
@@ -534,12 +534,8 @@ def run(browser, control, pads, updates=None, *, trusted_updates=False, heartbea
         image.get_accessible().set_name("Scan to open a GitHub issue draft")
         row.pack_start(image, False, False, 0)
         text = style(Gtk.Label(label=(
-            "Scan with your phone to describe the problem.\n"
-            "GitHub sign-in is required. Submitted issues are public.\n"
-            "Nothing is posted until you submit on your phone.\n\n"
-            "Only this diagnostic summary is prefilled:\n" + summary +
-            "\n\nNo logs, account details or network identifiers.\n"
-            "Please do not add passwords or other private information.")), "status")
+            "Scan to submit an issue.\n"
+            "GitHub sign-in is required.")), "status")
         text.set_line_wrap(True)
         text.set_max_width_chars(44)
         text.set_xalign(0)
